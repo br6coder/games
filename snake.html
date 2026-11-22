@@ -16,6 +16,11 @@
     --nose: #050505;
     --biscuit: #dfa65c;
     --biscuit-edge: #9c6a2c;
+    --cat-white: #f4f2ee;
+    --cat-black: #141416;
+    --cat-edge: #8d8d96;
+    --cat-eye: #8be05a;
+    --cat-nose: #f29bb0;
     --fg: #e6f2ec;
     --muted: #8fb0a3;
     --accent: #dfa65c;
@@ -122,7 +127,7 @@
   <canvas id="c" width="800" height="800"></canvas>
   <div class="overlay" id="overlay">
     <h2 id="ovTitle">Marmite Doggy Biscuits</h2>
-    <p id="ovMsg">Guide Marmite to the doggy biscuits. Every biscuit makes him longer!</p>
+    <p id="ovMsg">Guide Marmite to the doggy biscuits. Every biscuit makes him longer. Don't let Panda the cat touch him!</p>
     <div class="go" id="ovBtn">Tap to start</div>
   </div>
 </div>
@@ -150,6 +155,8 @@
 
   var DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   var snake, dir, queued, food, score, best = 0, timer, running = false, munchUntil = 0;
+  // Panda the cat: grid cell, previous cell (for smooth movement), facing, timing
+  var cat = null, catFrom, catDir = [1, 0], catMovedAt = 0, catTimer, catStep = 320;
 
   try { best = parseInt(localStorage.getItem('snake-best'), 10) || 0; } catch (e) {}
   bestEl.textContent = best;
@@ -240,6 +247,28 @@
       noise(t, vol * 0.3, sfxBus, 0.08, 500);
     }
 
+    // Cat "meow": a buzzy tone with vibrato whose pitch and vowel rise then fall
+    function meow(t, vol) {
+      var o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      var lfo = ac.createOscillator(), lg = ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(550, t);
+      o.frequency.linearRampToValueAtTime(850, t + 0.18);
+      o.frequency.linearRampToValueAtTime(480, t + 0.6);
+      f.type = 'bandpass'; f.Q.value = 3;
+      f.frequency.setValueAtTime(900, t);
+      f.frequency.linearRampToValueAtTime(1600, t + 0.2);
+      f.frequency.linearRampToValueAtTime(800, t + 0.6);
+      lfo.frequency.value = 7; lg.gain.value = 12;
+      lfo.connect(lg); lg.connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.05);
+      g.gain.setValueAtTime(vol, t + 0.45);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
+      o.connect(f); f.connect(g); g.connect(sfxBus);
+      o.start(t); o.stop(t + 0.7); lfo.start(t); lfo.stop(t + 0.7);
+    }
+
     // Am - F - C - G loop, 8 eighth-note steps per bar
     var ROOTS = [45, 41, 48, 43];
     var CHORDS = [[69, 72, 76], [65, 69, 72], [67, 72, 76], [67, 71, 74]];
@@ -287,6 +316,12 @@
       } else if (name === 'start') {   // "woof woof"
         bark(t, 0.6);
         bark(t + 0.24, 0.6);
+      } else if (name === 'meow') {    // Panda joins the chase
+        meow(t, 0.45);
+      } else if (name === 'caught') {  // Panda got him: meow, then whimper
+        meow(t, 0.7);
+        tone(1000, t + 0.75, 0.35, 'sine', 0.3, sfxBus, 620);
+        tone(900, t + 1.17, 0.55, 'sine', 0.3, sfxBus, 420);
       } else if (name === 'over') {    // sad whimper
         tone(1000, t, 0.35, 'sine', 0.3, sfxBus, 620);
         tone(900, t + 0.42, 0.55, 'sine', 0.3, sfxBus, 420);
@@ -332,12 +367,14 @@
   function placeFood() {
     var free = [];
     for (var x = 0; x < N; x++) for (var y = 0; y < N; y++) {
+      if (cat && cat[0] === x && cat[1] === y) continue;
       if (!snake.some(function (s) { return s[0] === x && s[1] === y; })) free.push([x, y]);
     }
     food = free[Math.floor(Math.random() * free.length)];
   }
 
   function reset() {
+    cat = [2, 2]; catFrom = cat; catDir = [1, 0]; catMovedAt = 0; catStep = 320;
     snake = [[10, 10], [9, 10], [8, 10]];
     dir = DIRS.right;
     queued = [];
@@ -358,18 +395,21 @@
     Sound.sfx('start');
     Sound.startMusic();
     schedule();
+    clearTimeout(catTimer);
+    catTimer = setTimeout(function () { Sound.sfx('meow'); catTick(); }, 1200);   // short head start
   }
 
-  function gameOver(won) {
+  function gameOver(won, byCat) {
     running = false;
     clearTimeout(timer);
+    clearTimeout(catTimer);
     Sound.stopMusic();
-    Sound.sfx('over');
+    Sound.sfx(byCat ? 'caught' : 'over');
     if (score > best) {
       best = score; bestEl.textContent = best;
       try { localStorage.setItem('snake-best', String(best)); } catch (e) {}
     }
-    ovTitle.textContent = won ? 'Good boy!' : 'Ruff luck!';
+    ovTitle.textContent = byCat ? 'Panda got Marmite!' : won ? 'Good boy!' : 'Ruff luck!';
     ovMsg.textContent = 'Marmite ate ' + score + (score === 1 ? ' biscuit.' : ' biscuits.');
     ovBtn.textContent = 'Tap to play again';
     overlay.hidden = false;
@@ -393,6 +433,7 @@
     var hit = head[0] < 0 || head[1] < 0 || head[0] >= N || head[1] >= N ||
       body.some(function (s) { return s[0] === head[0] && s[1] === head[1]; });
     if (hit) { gameOver(false); return; }
+    if (head[0] === cat[0] && head[1] === cat[1]) { gameOver(false, true); return; }
     snake.unshift(head);
     if (ate) {
       score++; scoreEl.textContent = score;
@@ -407,6 +448,26 @@
     schedule();
   }
 
+  // Panda steps one cell toward Marmite's head; now and then he takes a random step
+  function catTick() {
+    if (!running) return;
+    var h = snake[0], opts = [];
+    Object.keys(DIRS).forEach(function (k) {
+      var m = DIRS[k], nx = cat[0] + m[0], ny = cat[1] + m[1];
+      if (nx < 0 || ny < 0 || nx >= N || ny >= N) return;
+      opts.push({ m: m, d: Math.abs(h[0] - nx) + Math.abs(h[1] - ny) + Math.random() * 0.5 });
+    });
+    opts.sort(function (a, b) { return a.d - b.d; });
+    var pick = Math.random() < 0.15 ? opts[Math.floor(Math.random() * opts.length)] : opts[0];
+    catFrom = cat;
+    cat = [cat[0] + pick.m[0], cat[1] + pick.m[1]];
+    catDir = pick.m;
+    catMovedAt = performance.now();
+    catStep = Math.max(170, 320 - score * 5);
+    if (snake.some(function (s) { return s[0] === cat[0] && s[1] === cat[1]; })) { gameOver(false, true); return; }
+    catTimer = setTimeout(catTick, catStep);
+  }
+
   // ---------- Drawing ----------
   var rootStyle = getComputedStyle(document.documentElement);
   function tok(name) { return rootStyle.getPropertyValue(name).trim(); }
@@ -414,7 +475,9 @@
     lawn: tok('--lawn'), lawnAlt: tok('--lawn-alt'), blade: tok('--blade'),
     fur: tok('--fur'), edge: tok('--fur-edge'), sheen: tok('--fur-sheen'), beard: tok('--beard'),
     brow: tok('--brow'), eye: tok('--eye'), nose: tok('--nose'),
-    biscuit: tok('--biscuit'), biscuitEdge: tok('--biscuit-edge')
+    biscuit: tok('--biscuit'), biscuitEdge: tok('--biscuit-edge'),
+    catWhite: tok('--cat-white'), catBlack: tok('--cat-black'), catEdge: tok('--cat-edge'),
+    catEye: tok('--cat-eye'), catNose: tok('--cat-nose')
   };
 
   // Lawn is drawn once to an offscreen canvas
@@ -616,6 +679,74 @@
     ctx.restore();
   }
 
+  // Panda: a black-and-white cat seen from above, facing +x before rotation
+  function drawCat(t) {
+    var u = CELL, a = center(catFrom), b = center(cat);
+    var k = Math.min(1, Math.max(0, (t - catMovedAt) / (catStep * 0.6)));
+    k = k * (2 - k);
+    var x = a[0] + (b[0] - a[0]) * k, y = a[1] + (b[1] - a[1]) * k;
+    var phase = running && k < 1 ? Math.sin(t / 40) : 0;
+    function oval(cx, cy, rx, ry, rot, fill, stroke) {
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, rot || 0, 0, Math.PI * 2);
+      ctx.fillStyle = fill; ctx.fill();
+      if (stroke) { ctx.strokeStyle = C.catEdge; ctx.lineWidth = u * 0.035; ctx.stroke(); }
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    oval(0, u * 0.14, u * 0.55, u * 0.28, 0, 'rgba(0,0,0,0.15)');
+    ctx.rotate(Math.atan2(catDir[1], catDir[0]));
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    // swishing tail with a white tip
+    var sw = Math.sin(t / 220) * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.5, 0);
+    ctx.quadraticCurveTo(-u * 0.8, -sw * u * 0.8, -u * 0.95, sw * u * 0.6);
+    ctx.strokeStyle = C.catEdge; ctx.lineWidth = u * 0.17; ctx.stroke();
+    ctx.strokeStyle = C.catBlack; ctx.lineWidth = u * 0.12; ctx.stroke();
+    oval(-u * 0.95, sw * u * 0.6, u * 0.06, u * 0.06, 0, C.catWhite);
+
+    // white paws
+    [[0.12, 1], [0.12, -1], [-0.38, 1], [-0.38, -1]].forEach(function (p, i) {
+      var off = (i % 3 === 0 ? 1 : -1) * phase * u * 0.08;
+      oval(p[0] * u + off, p[1] * u * 0.27, u * 0.09, u * 0.065, 0, C.catWhite, true);
+    });
+
+    // body: white with a black saddle
+    oval(-u * 0.15, 0, u * 0.42, u * 0.27, 0, C.catWhite, true);
+    oval(-u * 0.22, 0, u * 0.27, u * 0.24, 0, C.catBlack);
+
+    // head
+    oval(u * 0.3, 0, u * 0.25, u * 0.25, 0, C.catWhite, true);
+    [-1, 1].forEach(function (s) {
+      ctx.beginPath();
+      ctx.moveTo(u * 0.16, s * u * 0.13);
+      ctx.lineTo(u * 0.24, s * u * 0.37);
+      ctx.lineTo(u * 0.38, s * u * 0.18);
+      ctx.closePath();
+      ctx.fillStyle = C.catBlack; ctx.fill();
+      // panda eye patches with green eyes
+      oval(u * 0.37, s * u * 0.1, u * 0.085, u * 0.065, s * 0.4, C.catBlack);
+      oval(u * 0.39, s * u * 0.1, u * 0.04, u * 0.04, 0, C.catEye);
+      oval(u * 0.395, s * u * 0.1, u * 0.012, u * 0.03, 0, C.catBlack);
+    });
+
+    // nose and whiskers
+    ctx.beginPath();
+    ctx.moveTo(u * 0.56, 0); ctx.lineTo(u * 0.5, -u * 0.045); ctx.lineTo(u * 0.5, u * 0.045); ctx.closePath();
+    ctx.fillStyle = C.catNose; ctx.fill();
+    ctx.strokeStyle = C.catEdge; ctx.lineWidth = u * 0.02;
+    [-1, 1].forEach(function (s) {
+      for (var w = 0; w < 3; w++) {
+        ctx.beginPath();
+        ctx.moveTo(u * 0.5, s * u * 0.05);
+        ctx.lineTo(u * 0.76, s * u * (0.08 + w * 0.08));
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
   function draw(t) {
     ctx.drawImage(bg, 0, 0);
     drawBiscuit(t);
@@ -625,6 +756,7 @@
     drawPaws(1, phase);
     drawTail(t);
     drawHead(t);
+    drawCat(t);
   }
 
   function frame(t) {
