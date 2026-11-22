@@ -1,0 +1,1603 @@
+<title>Orpington Day Out</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Rubik:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one-screen game. HUD strip on top, the town map fills the middle, dialogue docks to the bottom of the map, touch pad below. Single dark look by choice (a dusk-blue BR6 frame with Buff Orpington gold). */
+  :root {
+    --frame: #182230;
+    --panel: #223044;
+    --panel-2: #2c3d55;
+    --line: #3d5370;
+    --paper: #f4ecd9;
+    --paper-edge: #d9ccad;
+    --ink: #1c2533;
+    --text: #edf1f6;
+    --muted: #9db0c6;
+    --buff: #e2a645;
+    --buff-deep: #8a5a17;
+    --good: #7cc47f;
+    --bad: #e8735f;
+    --energy: #6fc0e0;
+    --font-display: "Pixelify Sans", ui-monospace, "Courier New", monospace;
+    --font-body: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--frame);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 15px;
+    display: flex; flex-direction: column; gap: 8px;
+    padding-block: 8px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    box-sizing: border-box;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--buff); outline-offset: 2px; }
+
+  .hud { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 32px; }
+  .brand { font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; color: var(--buff); letter-spacing: 0.02em; margin-right: auto; }
+  .stat { display: flex; align-items: center; gap: 6px; font-family: var(--font-display); font-size: 1.05rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stat small { font-family: var(--font-body); font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .bar { width: 64px; height: 9px; background: var(--panel-2); border-radius: 2px; overflow: hidden; border: 1px solid var(--line); }
+  .bar i { display: block; height: 100%; background: var(--energy); width: 100%; }
+  .bar.low i { background: var(--bad); }
+  .hud-btns { display: flex; gap: 6px; }
+  .hud-btns button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 0.85rem; }
+  .hud-btns button:hover { background: var(--panel-2); }
+
+  .stage { position: relative; flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; border: 2px solid var(--line); background: #0d141d; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+
+  .zone { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-family: var(--font-display); font-size: 1.1rem; background: rgba(24,34,48,0.86); border: 1px solid var(--line); border-radius: 4px; padding: 4px 14px; color: var(--buff); pointer-events: none; transition: opacity .4s; white-space: nowrap; }
+  .toasts { position: absolute; top: 48px; right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; max-width: calc(100% - 20px); }
+  .toast { background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 4px; padding: 5px 10px; font-size: 0.85rem; font-weight: 500; box-shadow: 3px 3px 0 rgba(0,0,0,.35); animation: tin .25s ease-out; }
+  .toast.gold { background: var(--buff); }
+  @keyframes tin { from { transform: translateX(16px); opacity: 0; } }
+
+  .hint { position: absolute; left: 10px; bottom: 10px; font-size: 0.8rem; background: rgba(24,34,48,0.86); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; pointer-events: none; }
+  .hint kbd { font-family: var(--font-display); color: var(--buff); }
+
+  .dlg { position: absolute; left: 10px; right: 10px; bottom: 10px; max-height: 72%; overflow-y: auto; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 6px; box-shadow: 0 0 0 3px var(--paper-edge) inset, 4px 4px 0 rgba(0,0,0,.4); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+  .dlg .who { align-self: flex-start; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; background: var(--ink); color: var(--buff); padding: 2px 10px; border-radius: 3px; margin-top: -2px; }
+  .dlg .txt { font-size: 1rem; line-height: 1.5; max-width: 68ch; white-space: pre-line; min-height: 1.5em; }
+  .dlg .next { align-self: flex-end; font-family: var(--font-display); font-size: 0.85rem; color: var(--buff-deep); animation: nudge 1s infinite; }
+  @keyframes nudge { 50% { transform: translateY(2px); } }
+  .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 6px; }
+  .opts button { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; text-align: left; background: #fffaf0; border: 2px solid var(--paper-edge); border-radius: 4px; padding: 7px 10px; color: var(--ink); font-size: 0.95rem; }
+  .opts button .n { font-family: var(--font-display); color: var(--buff-deep); white-space: nowrap; }
+  .opts button.sel { border-color: var(--ink); background: #fff3d6; }
+  .opts button:disabled { opacity: .45; cursor: default; }
+
+  .panel { position: absolute; inset: 10px; background: var(--panel); border: 2px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; }
+  .panel header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .panel header h2 { margin: 0; font-family: var(--font-display); font-size: 1.3rem; color: var(--buff); margin-right: auto; }
+  .panel header button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; }
+  .panel .tabs { display: flex; gap: 4px; }
+  .panel .tabs button { background: none; border: 1px solid transparent; border-radius: 4px; padding: 4px 10px; color: var(--muted); }
+  .panel .tabs button[aria-pressed="true"] { color: var(--text); border-color: var(--line); background: var(--panel-2); }
+  .panel .body { overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .panel h3 { margin: 0 0 6px; font-family: var(--font-display); font-weight: 600; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; gap: 10px; align-items: center; background: var(--panel-2); border-radius: 4px; padding: 8px 10px; }
+  .row .meta { flex: 1; min-width: 0; }
+  .row b { font-weight: 600; }
+  .row p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; line-height: 1.35; }
+  .row button { background: var(--buff); color: var(--ink); border: 0; border-radius: 4px; padding: 5px 10px; font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
+  .row button.off { background: var(--frame); color: var(--muted); border: 1px solid var(--line); }
+  .row .tag { font-family: var(--font-display); font-size: 0.8rem; padding: 2px 6px; border-radius: 3px; background: var(--frame); color: var(--muted); white-space: nowrap; }
+  .row .tag.done { background: var(--good); color: var(--ink); }
+  .row .tag.act { background: var(--buff); color: var(--ink); }
+  .empty { color: var(--muted); font-size: 0.9rem; margin: 0; }
+  .stamps { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .stamp { border: 2px dashed var(--line); border-radius: 6px; padding: 8px; min-height: 86px; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+  .stamp b { font-family: var(--font-display); font-size: 0.95rem; color: var(--text); font-weight: 600; }
+  .stamp.got { border: 2px solid var(--buff); background: rgba(226,166,69,0.12); color: var(--text); transform: rotate(-1.5deg); }
+  .stamp.got:nth-child(even) { transform: rotate(1.2deg); }
+  .stamp .ink { font-family: var(--font-display); color: var(--buff); font-size: 0.8rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .stats div { background: var(--panel-2); border-radius: 4px; padding: 8px 10px; font-size: 0.8rem; color: var(--muted); }
+  .stats div b { display: block; font-family: var(--font-display); font-size: 1.2rem; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .mini { position: absolute; left: 10px; right: 10px; bottom: 10px; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .mini h2 { margin: 0; font-family: var(--font-display); font-size: 1.2rem; }
+  .mini p { margin: 0; font-size: 0.9rem; }
+  .track { position: relative; height: 34px; background: #e4d8bc; border: 2px solid var(--ink); border-radius: 4px; overflow: hidden; }
+  .track .zone2 { position: absolute; top: 0; bottom: 0; background: var(--good); }
+  .track .mark { position: absolute; top: -2px; bottom: -2px; width: 6px; margin-left: -3px; background: var(--ink); }
+  .mini .row2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-family: var(--font-display); }
+  .mini button.play { background: var(--buff); border: 2px solid var(--ink); border-radius: 4px; padding: 8px 18px; font-family: var(--font-display); font-size: 1.05rem; color: var(--ink); }
+
+  .title { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(13, 20, 29, 0.55); }
+  .card { background: var(--panel); border: 2px solid var(--line); border-radius: 8px; padding: 22px 24px; max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 12px; box-shadow: 6px 6px 0 rgba(0,0,0,.35); }
+  .card .eyebrow { font-family: var(--font-display); color: var(--muted); letter-spacing: 0.16em; font-size: 0.8rem; text-transform: uppercase; }
+  .card h1 { margin: 0; font-family: var(--font-display); font-size: clamp(2.2rem, 9vw, 3.4rem); line-height: 0.95; color: var(--buff); text-wrap: balance; }
+  .card p { margin: 0; line-height: 1.5; color: var(--text); }
+  .card .keys { font-size: 0.85rem; color: var(--muted); }
+  .card .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .card .btns button { flex: 1; background: var(--buff); color: var(--ink); border: 2px solid var(--ink); border-radius: 4px; padding: 10px 14px; font-family: var(--font-display); font-size: 1.1rem; }
+  .card .btns button.alt { background: var(--panel-2); color: var(--text); border-color: var(--line); }
+  .cert h1 { font-size: clamp(1.8rem, 7vw, 2.6rem); }
+
+  .pad { display: flex; justify-content: space-between; align-items: center; gap: 12px; user-select: none; -webkit-user-select: none; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 46px); gap: 4px; }
+  .dpad button, .abtns button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font-size: 1.2rem; touch-action: none; }
+  .dpad button:active, .abtns button:active, .dpad button.on { background: var(--panel-2); }
+  .dpad .u { grid-column: 2; grid-row: 1; } .dpad .l { grid-column: 1; grid-row: 2; } .dpad .r { grid-column: 3; grid-row: 2; } .dpad .d { grid-column: 2; grid-row: 3; }
+  .abtns { display: flex; gap: 10px; align-items: center; }
+  .abtns .a { width: 74px; height: 74px; border-radius: 50%; background: var(--buff); color: var(--ink); font-family: var(--font-display); font-size: 1.4rem; border: 2px solid var(--ink); }
+  .abtns .b { width: 54px; height: 54px; border-radius: 50%; font-size: 0.8rem; }
+  @media (max-height: 520px) { .dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 36px); } .abtns .a { width: 60px; height: 60px; } }
+  @media (max-width: 520px) { .brand { display: none; } .hud { gap: 6px 10px; } }
+  @media (prefers-reduced-motion: reduce) { .toast, .dlg .next { animation: none; } .zone { transition: none; } }
+</style>
+
+<div class="hud">
+  <div class="brand">Orpington</div>
+  <div class="stat"><small>Cash</small><span id="hMoney">£15.00</span></div>
+  <div class="stat"><small>Energy</small><span class="bar" id="hBar"><i id="hEnergy"></i></span></div>
+  <div class="stat"><small>Fun</small><span id="hFun">0</span></div>
+  <div class="stat"><span id="hClock">Day 1 · 08:00</span></div>
+  <div class="stat"><small>Stamps</small><span id="hStamps">0/10</span></div>
+  <div class="hud-btns">
+    <button id="bBag" type="button">Bag</button>
+    <button id="bJournal" type="button">Journal</button>
+    <button id="bSound" type="button" aria-pressed="true">Sound on</button>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+  <canvas id="cv"></canvas>
+  <div class="zone" id="zone" hidden></div>
+  <div class="toasts" id="toasts"></div>
+  <div class="hint" id="hint" hidden></div>
+  <div class="dlg" id="dlg" hidden>
+    <div class="who" id="dWho"></div>
+    <div class="txt" id="dTxt"></div>
+    <div class="opts" id="dOpts"></div>
+    <div class="next" id="dNext">▼</div>
+  </div>
+  <div class="mini" id="mini" hidden>
+    <h2>Busking at Orpington Station</h2>
+    <p id="mMsg">Press Space or tap Play when the marker is in the green.</p>
+    <div class="track"><div class="zone2" id="mZone"></div><div class="mark" id="mMark"></div></div>
+    <div class="row2"><span id="mScore">Notes 0/6 · Tips £0.00</span><button class="play" id="mPlay" type="button">Play!</button></div>
+  </div>
+  <div class="panel" id="panel" hidden>
+    <header><h2 id="pTitle">Bag</h2><div class="tabs" id="pTabs"></div><button id="pClose" type="button">Close</button></header>
+    <div class="body" id="pBody"></div>
+  </div>
+  <div class="title" id="title">
+    <div class="card">
+      <div class="eyebrow">A day out in BR6</div>
+      <h1>Orpington Day Out</h1>
+      <p>You've got the day off and twenty-odd quid in your pocket. Wander the High Street, meet the locals, earn a bit, spend a bit, and fill your Orpington Passport with all ten stamps.</p>
+      <p class="keys">Move with the arrow keys or WASD. Space or E to talk, shop and open doors. B for your bag, J for your journal.</p>
+      <div class="btns"><button id="tNew" type="button">New game</button><button id="tCont" class="alt" type="button" hidden>Continue</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="pad" id="pad" hidden>
+  <div class="dpad">
+    <button class="u" data-dir="up" aria-label="Up" type="button">▲</button>
+    <button class="l" data-dir="left" aria-label="Left" type="button">◀</button>
+    <button class="r" data-dir="right" aria-label="Right" type="button">▶</button>
+    <button class="d" data-dir="down" aria-label="Down" type="button">▼</button>
+  </div>
+  <div class="abtns">
+    <button class="b" id="padBag" type="button">Bag</button>
+    <button class="a" id="padA" type="button" aria-label="Action">A</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const TS = 16, W = 60, H = 50;
+
+// ---------- tiles ----------
+const GRASS=0, PAVE=1, PAVE2=2, ROAD=3, ZEBRA=4, WATER=5, TREE=6, HEDGE=7, FLOWER=8, RAIL=9, PLAT=10, FENCE=11, DIRT=12, SOIL=13, BRIDGE=14, BLD=15;
+const WALK = new Set([GRASS, PAVE, PAVE2, ROAD, ZEBRA, FLOWER, PLAT, DIRT, SOIL, BRIDGE]);
+const map = new Uint8Array(W * H);
+const get = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? TREE : map[y * W + x];
+const set = (x, y, t) => { if (x >= 0 && y >= 0 && x < W && y < H) map[y * W + x] = t; };
+const fill = (x, y, w, h, t) => { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) set(i, j, t); };
+const K = (x, y) => y * W + x;
+function hash(x, y) { let h = (x * 374761393 + y * 668265263) >>> 0; h = ((h ^ (h >>> 13)) * 1274126177) >>> 0; return (h ^ (h >>> 16)) >>> 0; }
+
+fill(0, 0, W, H, GRASS);
+fill(0, 0, W, 1, TREE);
+fill(0, 1, W, 2, RAIL);
+fill(0, 3, W, 1, FENCE);
+fill(14, 3, 21, 2, PLAT);
+fill(14, 5, 4, 3, PAVE); fill(28, 5, 7, 3, PAVE);
+fill(12, 8, 25, 2, PAVE);
+fill(1, 9, 10, 1, PAVE);
+// allotments
+fill(39, 4, 20, 6, HEDGE); fill(40, 4, 18, 5, DIRT); set(48, 9, DIRT); set(49, 9, DIRT);
+fill(41, 4, 4, 2, SOIL); fill(46, 4, 5, 2, SOIL); fill(41, 7, 4, 2, SOIL); fill(46, 7, 5, 2, SOIL); fill(53, 7, 4, 2, SOIL);
+// roads
+fill(0, 10, W, 2, ROAD); fill(29, 10, 3, 2, ZEBRA); fill(5, 10, 2, 2, ZEBRA); fill(48, 10, 2, 2, ZEBRA);
+fill(0, 12, W, 1, PAVE);
+fill(27, 12, 7, 29, PAVE2);
+fill(20, 13, 7, 27, PAVE); fill(34, 13, 7, 27, PAVE); fill(41, 24, 3, 3, PAVE);
+// residential
+fill(9, 13, 1, 27, PAVE);
+for (const y of [17, 23, 29, 35]) fill(1, y, 18, 1, PAVE);
+// priory gardens
+fill(1, 41, 58, 1, PAVE); fill(29, 42, 3, 7, PAVE);
+fill(37, 43, 16, 4, WATER); set(37, 43, GRASS); set(52, 46, GRASS); set(37, 46, GRASS);
+fill(53, 44, 6, 2, WATER); fill(55, 44, 1, 2, BRIDGE);
+fill(14, 45, 4, 2, FLOWER); fill(34, 45, 2, 2, FLOWER); fill(1, 47, 3, 1, FLOWER);
+// borders
+fill(0, 49, W, 1, TREE); fill(0, 13, 1, 36, TREE); fill(59, 4, 1, 45, TREE); fill(0, 4, 1, 6, TREE);
+const TREES = [[11,5],[12,7],[36,5],[37,8],[42,14],[46,15],[50,14],[54,15],[57,13],[58,20],[58,26],[58,31],[42,18],[42,31],[43,36],[47,38],[51,36],[55,38],[58,35],
+  [18,14],[18,21],[18,27],[18,33],[7,21],[7,33],[16,38],[4,38],[12,38],[2,43],[4,47],[15,43],[17,47],[34,42],[35,48],[54,47],[57,47],[45,48],[26,48],[2,45]];
+for (const [x, y] of TREES) if (get(x, y) === GRASS) set(x, y, TREE);
+
+// ---------- buildings ----------
+const BUILDINGS = [
+  { id:'station', name:'Orpington Station', x:18, y:5, w:10, h:3, door:{x:22,y:7,s:'s'}, roof:'#717b88', roof2:'#626b77', wall:'#cdb99c', awn:['#28456a','#e8e0cc'] },
+  { id:'villa', name:'Crofton Roman Villa', x:2, y:5, w:8, h:4, door:{x:5,y:8,s:'s'}, roof:'#7f8f6a', roof2:'#6e7d5b', wall:'#ddd1b8', awn:['#8c2f2a','#e9dcc0'] },
+  { id:'cafe', name:"Gianni's Café", x:20, y:14, w:7, h:4, door:{x:26,y:15,s:'e'}, roof:'#a45a4c', roof2:'#8e4b3f', wall:'#efe3cc', awn:['#2f6b4f','#f1ead9'] },
+  { id:'bakery', name:'Crumbs Bakery', x:20, y:19, w:7, h:4, door:{x:26,y:20,s:'e'}, roof:'#9a6a52', roof2:'#855a44', wall:'#f3e6d0', awn:['#d97a96','#fbeef2'] },
+  { id:'charity', name:'Second Chances', x:20, y:24, w:7, h:4, door:{x:26,y:25,s:'e'}, roof:'#8b5e4a', roof2:'#774f3d', wall:'#e9dfcf', awn:['#6a4a8c','#ece4f4'] },
+  { id:'news', name:"Raj's News", x:20, y:29, w:7, h:4, door:{x:26,y:30,s:'e'}, roof:'#a1624f', roof2:'#8b5343', wall:'#efe5d4', awn:['#2a62a8','#e9eff8'] },
+  { id:'chippy', name:'The Golden Cod', x:20, y:34, w:7, h:4, door:{x:26,y:35,s:'e'}, roof:'#94604c', roof2:'#7f513f', wall:'#eee2cb', awn:['#1f5fa0','#f2c94c'] },
+  { id:'music', name:"Strings 'n' Things", x:34, y:14, w:7, h:4, door:{x:34,y:15,s:'w'}, roof:'#7c5a50', roof2:'#6a4b43', wall:'#e4dccd', awn:['#222','#eee'] },
+  { id:'pets', name:'Feathers & Paws', x:34, y:19, w:7, h:4, door:{x:34,y:20,s:'w'}, roof:'#9c6a4d', roof2:'#87593f', wall:'#efe3cb', awn:['#4e8a3c','#eef3e4'] },
+  { id:'barber', name:"Kostas' Barbers", x:34, y:29, w:7, h:4, door:{x:34,y:30,s:'w'}, roof:'#8f5f52', roof2:'#7a5045', wall:'#ece2d2', awn:['#c8282d','#f4f0ea'] },
+  { id:'pub', name:'The Buff Orpington', x:34, y:34, w:7, h:4, door:{x:34,y:35,s:'w'}, roof:'#5f4a3c', roof2:'#4f3d31', wall:'#2c3d2e', awn:['#1f3a27','#d9a441'] },
+  { id:'walnuts', name:'The Walnuts', x:44, y:17, w:13, h:17, door:{x:44,y:25,s:'w'}, roof:'#a9adb3', roof2:'#979ca3', wall:'#d9d4c8', flat:true },
+  { id:'shed', name:"Bob's Shed", x:53, y:4, w:4, h:2, door:{x:54,y:5,s:'s'}, roof:'#5e6b4c', roof2:'#4f5b3f', wall:'#8a6a48', small:true },
+  { id:'library', name:'Library', x:6, y:43, w:7, h:4, door:{x:9,y:43,s:'n'}, roof:'#8a5040', roof2:'#764436', wall:'#c58a6a', awn:['#2a4f6b','#e9eef2'] },
+  { id:'priory', name:'The Priory', x:19, y:43, w:8, h:5, door:{x:22,y:43,s:'n'}, roof:'#7d6a5a', roof2:'#6b5a4c', wall:'#d8ccb4', awn:null },
+];
+const HOUSE_SPOTS = [[2,14],[12,14],[2,20],[12,20],[2,26],[12,26],[2,32],[12,32]];
+const HOUSE_ROOFS = ['#b0503f','#6f7480','#9a5b3a','#7b4a3d','#a8644a','#5d6878','#94503f','#80604a'];
+HOUSE_SPOTS.forEach(([x, y], i) => BUILDINGS.push({ id:'house', idx:i, name: i === 0 ? 'Home' : 'No. ' + (i + 1), x, y, w:5, h:3, door:{x:x+2,y:y+2,s:'s'}, roof:HOUSE_ROOFS[i], roof2:'rgba(0,0,0,.14)', wall:'#e7d8bf', house:true }));
+const doorMap = new Map();
+for (const b of BUILDINGS) { fill(b.x, b.y, b.w, b.h, BLD); doorMap.set(K(b.door.x, b.door.y), b); }
+const doorAt = (x, y) => doorMap.get(K(x, y));
+
+// ---------- props ----------
+const props = [], propMap = new Map();
+function addProp(type, x, y, o = {}) { const p = { type, x, y, solid: true, ...o }; props.push(p); propMap.set(K(x, y), p); return p; }
+const propAt = (x, y) => propMap.get(K(x, y));
+for (const y of [14, 19, 24, 29, 34, 39]) { addProp('lamp', 27, y); addProp('lamp', 33, y); }
+for (const x of [14, 34]) addProp('lamp', x, 9);
+addProp('lamp', 9, 40); addProp('lamp', 28, 46); addProp('lamp', 32, 42);
+for (const y of [17, 27, 37]) addProp('bench', 30, y, { label: 'Sit on the bench' });
+addProp('bench', 33, 47, { label: 'Sit on the bench' }); addProp('bench', 40, 42, { label: 'Sit on the bench' }); addProp('bench', 16, 9, { label: 'Sit on the bench' });
+for (const y of [22, 32]) addProp('planter', 30, y);
+addProp('bin', 28, 17); addProp('bin', 32, 27); addProp('bin', 36, 9);
+for (const [x, y] of [[28,9],[32,9],[28,12],[32,12],[4,9],[7,9],[4,12],[7,12],[47,12],[50,12]]) addProp('beacon', x, y);
+addProp('busstop', 36, 12, { label: 'Check the bus stop' });
+addProp('shelter', 37, 12, { part: 0 }); addProp('shelter', 38, 12, { part: 1 });
+addProp('phonebox', 33, 38, { label: 'Look in the phone box' });
+addProp('postbox', 27, 38, { label: 'Read the post box' });
+addProp('board', 20, 9, { label: 'Read the notice board' });
+addProp('pitch', 31, 8, { solid: false, label: 'Busk here' });
+addProp('van', 32, 44, { part: 0, label: 'Buy an ice cream' }); addProp('van', 33, 44, { part: 1, label: 'Buy an ice cream' });
+addProp('coop', 56, 42, { part: 0, label: 'Peek in the hen coop' }); addProp('coop', 57, 42, { part: 1, label: 'Peek in the hen coop' });
+addProp('sign', 38, 9, { label: 'Read the sign' });
+
+// ---------- items ----------
+const ITEMS = {
+  flat_white:{ name:'Flat white', kind:'food', en:15, fun:2, desc:'Gianni draws a heart in the foam. Usually.' },
+  hot_choc:{ name:'Hot chocolate', kind:'food', en:12, fun:4, desc:'Squirty cream and a flake on top.' },
+  bacon_bap:{ name:'Bacon bap', kind:'food', en:28, fun:2, desc:'Brown sauce. Not up for debate.' },
+  sausage_roll:{ name:'Sausage roll', kind:'food', en:18, fun:2, desc:'Flaky. You will wear the pastry.' },
+  iced_bun:{ name:'Iced bun', kind:'food', en:10, fun:3, desc:'Pink icing, one cherry.' },
+  bread:{ name:'Loaf of bread', kind:'food', en:8, fun:0, desc:"Yesterday's loaf. The ducks in Priory Gardens would go mad for it." },
+  chips:{ name:'Bag of chips', kind:'food', en:30, fun:3, desc:'Salt and vinegar, wrapped in paper.' },
+  cod_chips:{ name:'Cod and chips', kind:'food', en:55, fun:5, desc:'The Friday feeling, any day of the week.' },
+  pickled_egg:{ name:'Pickled egg', kind:'food', en:8, fun:2, desc:'A bold choice.' },
+  ninety_nine:{ name:'99 with a flake', kind:'food', en:10, fun:6, desc:'Eat it before it drips.' },
+  lolly:{ name:'Rocket lolly', kind:'food', en:6, fun:3, desc:'Tastes of orange, roughly.' },
+  lemonade:{ name:'Pint of lemonade', kind:'food', en:10, fun:2, desc:'Fizzy, with a slice.' },
+  ploughmans:{ name:"Ploughman's lunch", kind:'food', en:45, fun:3, desc:'Cheddar, pickle, crusty bread and one suspicious onion.' },
+  meal_deal:{ name:'Meal deal', kind:'food', en:35, fun:1, desc:'Sandwich, crisps, drink. The great British lunch contract.' },
+  pick_mix:{ name:"Pick 'n' mix", kind:'food', en:8, fun:5, desc:'Mostly cola bottles. No regrets.' },
+  egg:{ name:'Fresh egg', kind:'food', en:12, fun:2, desc:'Laid by a genuine Buff Orpington.' },
+  rhubarb:{ name:'Stick of rhubarb', kind:'food', en:6, fun:2, desc:'Bob says dip it in sugar. You have no sugar.' },
+  chicken_feed:{ name:'Chicken feed', kind:'tool', desc:'A rattly bag of corn. Chickens cannot resist it. Use it when a runaway hen is nearby.' },
+  guitar_string:{ name:'Guitar string (top E)', kind:'quest', desc:'For Dev, the busker outside the station.' },
+  kazoo:{ name:'Kazoo', kind:'tool', desc:'Technically an instrument. Busk with it at the station pitch.' },
+  harmonica:{ name:"Dev's harmonica", kind:'tool', desc:'Slightly dented. Busk with it at the station pitch.' },
+  rubber_chicken:{ name:'Rubber chicken', kind:'tool', desc:'Squeeze for joy.' },
+  newspaper:{ name:'Newspaper', kind:'quest', desc:'For the paper round. Deliver to the houses on Cook Close that Raj listed.' },
+  hen_book:{ name:"The Hen Fancier's Handbook", kind:'quest', desc:'Published 1923. Overdue since 1987. The library wants it back.' },
+  tessera:{ name:'Mosaic tessera', kind:'quest', desc:'A tiny Roman floor tile. Tessa at the villa needs three.' },
+  library_card:{ name:'Library card', kind:'key', desc:'Mr Okafor says it makes you officially clever. Handy in a pub quiz.' },
+  london_keyring:{ name:'Big Ben keyring', kind:'souvenir', desc:'From your day trip up to London.' },
+  darwin_postcard:{ name:'Down House postcard', kind:'souvenir', desc:"Darwin's study, where he wrote On the Origin of Species." },
+  villa_postcard:{ name:'Roman villa postcard', kind:'souvenir', desc:'Mosaic floor, glossy finish.' },
+  timetable:{ name:'1987 bus timetable', kind:'souvenir', desc:'Every R route, lovingly out of date.' },
+  roller_skate:{ name:'One roller skate', kind:'souvenir', desc:'Left foot only.' },
+  jigsaw:{ name:'Jigsaw of the Priory', kind:'souvenir', desc:'1,000 pieces. 999 in the box.' },
+  gnome:{ name:'Fishing gnome', kind:'souvenir', desc:'He holds a tiny rod and an enormous grudge.' },
+  vhs:{ name:'Panto VHS', kind:'souvenir', desc:'"Cinderella", Bromley, 1994. Oh yes it is.' },
+  flat_cap:{ name:'Flat cap', kind:'hat', desc:'Tweed. Instantly seventy years old.' },
+  bobble_hat:{ name:'Bobble hat', kind:'hat', desc:'Red, with a white bobble.' },
+  bowler:{ name:'Bowler hat', kind:'hat', desc:'For a very proper stroll down the High Street.' },
+  chicken_hat:{ name:'Chicken hat', kind:'hat', desc:'A plush Buff Orpington. On your head.' },
+  roman_helmet:{ name:'Roman helmet', kind:'hat', desc:'Plastic, with a red crest. A gift from the villa.' },
+  paper_crown:{ name:'Paper crown', kind:'hat', desc:'Pub quiz champion of the Buff Orpington.' },
+};
+const BRIC = ['timetable', 'roller_skate', 'jigsaw', 'gnome', 'vhs'];
+
+const STAMPS = [
+  ['station', 'Orpington Station', 'Visit the ticket office'],
+  ['villa', 'Roman Villa', 'Say hello to Tessa at Crofton Roman Villa'],
+  ['walnuts', 'The Walnuts', 'Pop into the shopping centre'],
+  ['allotments', 'Allotments', "Finish a day's weeding for Bob"],
+  ['priory', 'The Priory', "Take Edith's tour"],
+  ['library', 'Library', 'Return the long-lost library book'],
+  ['ducks', 'Priory Gardens', 'Feed the ducks (bread from Crumbs Bakery)'],
+  ['pub', 'The Buff Orpington', 'Play the pub quiz'],
+  ['downe', 'Down House', 'Catch the bus out to Downe'],
+  ['london', 'London', 'Take a day return from the station'],
+];
+
+const HOURS = { cafe:[7,17], bakery:[7,17], charity:[9,17], news:[6,21], chippy:[11.5,21.5], music:[9,18], pets:[9,18], barber:[9,18], pub:[11,23], walnuts:[8,20], station:[5,23.5], villa:[10,16], library:[9,18], priory:[10,17], van:[11,19] };
+
+// ---------- state ----------
+let S;
+function newState() {
+  return {
+    money: 1500, energy: 90, fun: 0, day: 1, min: 8 * 60,
+    px: 4, py: 17, dir: 'down',
+    inv: {}, hat: null, hair: '#5a3a22', style: 'short',
+    q: { hen: 0, busker: 0, villa: 0, library: 0 }, tess: [], stamps: {},
+    daily: {}, flags: {}, bric: [],
+    stats: { steps: 0, earned: 0, spent: 0, eaten: 0 }, done: false,
+  };
+}
+const fmt = p => '£' + (p / 100).toFixed(2);
+const has = id => (S.inv[id] || 0) > 0;
+function give(id, n = 1) { S.inv[id] = (S.inv[id] || 0) + n; }
+function take(id, n = 1) { S.inv[id] = Math.max(0, (S.inv[id] || 0) - n); if (!S.inv[id]) delete S.inv[id]; }
+function pay(p) { S.money -= p; S.stats.spent += p; }
+function earn(p) { S.money += p; S.stats.earned += p; sfx('coin'); }
+function addFun(n) { S.fun += n; }
+function addEnergy(n) { S.energy = Math.max(0, Math.min(100, S.energy + n)); }
+function hour() { return S.min / 60; }
+function isOpen(id) { const h = hour(), [o, c] = HOURS[id]; return h >= o && h < c; }
+function hhmm(h) { const hh = Math.floor(h), mm = Math.round((h - hh) * 60); return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0'); }
+function today(key) { return S.daily[key]; }
+function setToday(key, v) { S.daily[key] = v; }
+function advance(mins) { S.min += mins; addEnergy(-mins / 12); }
+
+// ---------- audio ----------
+let ac = null, muted = false;
+function ensureAudio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } } if (ac && ac.state === 'suspended') ac.resume(); }
+function tone(f, d, type = 'square', v = 0.05, delay = 0, slide = 0) {
+  if (!ac || muted) return;
+  const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (slide) o.frequency.exponentialRampToValueAtTime(f * slide, t + d);
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + 0.03);
+}
+const SFX = {
+  blip: () => tone(620, 0.025, 'square', 0.018),
+  coin: () => { tone(988, 0.07); tone(1319, 0.14, 'square', 0.05, 0.07); },
+  buy: () => { tone(523, 0.06); tone(784, 0.1, 'square', 0.05, 0.06); },
+  honk: () => { tone(330, 0.14, 'sawtooth', 0.04); tone(330, 0.2, 'sawtooth', 0.04, 0.2); },
+  quest: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.15, 'square', 0.05, i * 0.1)),
+  stamp: () => { tone(120, 0.12, 'triangle', 0.25); tone(70, 0.18, 'sine', 0.25, 0.02); },
+  bump: () => tone(90, 0.05, 'square', 0.03),
+  cluck: () => { tone(700, 0.05, 'square', 0.04, 0, 1.6); tone(620, 0.07, 'square', 0.04, 0.08, 1.4); },
+  squeak: () => tone(1100, 0.2, 'square', 0.04, 0, 1.8),
+  miss: () => tone(140, 0.14, 'sawtooth', 0.04),
+  quack: () => tone(320, 0.12, 'sawtooth', 0.04, 0, 0.7),
+  door: () => { tone(880, 0.06, 'triangle', 0.05); tone(660, 0.12, 'triangle', 0.05, 0.08); },
+  horn: () => { tone(392, 0.35, 'triangle', 0.035); tone(330, 0.45, 'triangle', 0.035, 0.35); },
+};
+const sfx = n => SFX[n] && SFX[n]();
+const NOTES = [523, 587, 659, 784, 880, 1047];
+
+// ---------- entities ----------
+const DIRS = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
+const player = { x: 4, y: 17, dir: 'down', mv: null, speed: 5.2 };
+const LOOK = {
+  dev:   { skin:'#8d5a3b', hair:'#1b1b1f', style:'short', shirt:'#d4643a', legs:'#3b4a63' },
+  tessa: { skin:'#f0c9a8', hair:'#a0522d', style:'long', shirt:'#6b8e4e', legs:'#3e3a36' },
+  mavis: { skin:'#f3d1b3', hair:'#dadade', style:'bun', shirt:'#b35a8a', legs:'#5a4b6a' },
+  bob:   { skin:'#e3b48e', hair:'#bbbbbb', style:'bald', shirt:'#4e6b3a', legs:'#5b4a35', hat:'flat_cap' },
+  reg:   { skin:'#e8c0a0', hair:'#e6e6e6', style:'bald', shirt:'#7a5c3e', legs:'#3a3a3a', hat:'bowler' },
+  gary:  { skin:'#f0c4a0', hair:'#3a2a1a', style:'short', shirt:'#2b2f3a', legs:'#23262e' },
+  doreen:{ skin:'#efc6a6', hair:'#b9a6d9', style:'bun', shirt:'#2f7f86', legs:'#3c3c50' },
+  priya: { skin:'#b97a52', hair:'#1b1b1f', style:'long', shirt:'#d94f6b', legs:'#2a3550' },
+  tom:   { skin:'#d8a07a', hair:'#6b4a2a', style:'spiky', shirt:'#e8d24a', legs:'#1e1e1e' },
+};
+const npcs = [
+  { id:'dev', name:'Dev', x:33, y:8, dir:'down', still:true },
+  { id:'tessa', name:'Tessa', x:8, y:9, dir:'down', still:true },
+  { id:'mavis', name:'Mavis', x:54, y:42, dir:'down', still:true },
+  { id:'bob', name:'Bob', x:51, y:6, dir:'down', still:true },
+  { id:'reg', name:'Reg', x:29, y:27, dir:'right', still:true },
+  { id:'gary', name:'Gary', x:25, y:9, dir:'down', bounds:[12,8,25,2] },
+  { id:'doreen', name:'Doreen', x:31, y:20, dir:'down', bounds:[27,13,7,27] },
+  { id:'priya', name:'Priya', x:39, y:25, dir:'left', bounds:[34,23,10,5] },
+  { id:'tom', name:'Tom', x:20, y:41, dir:'right', bounds:[1,41,57,8] },
+];
+for (const n of npcs) { n.look = LOOK[n.id]; n.mv = null; n.speed = n.id === 'tom' ? 4 : 2.2; n.wait = 1 + Math.random() * 2; n.pause = 0; n.ci = 0; }
+const npcAt = (x, y) => npcs.find(n => n.x === x && n.y === y);
+const hen = { active: false, follow: false, x: 47, y: 6, dir: 'left', mv: null, speed: 4.5, wait: 0 };
+
+let cars = [], trains = [], pickups = [], weeds = [], ducks = [], pigeons = [];
+let carTimer = 2, busTimer = 20, trainTimer = 6, feedUntil = -1, duckFeed = 0;
+function carAt(x, y) { return cars.some(c => c.lane === y && x + 1 > c.x + 0.05 && x < c.x + c.len - 0.05); }
+
+function passable(x, y, who) {
+  const t = get(x, y);
+  if (!WALK.has(t)) return false;
+  const p = propAt(x, y); if (p && p.solid) return false;
+  if (who !== 'player') {
+    if (t === ROAD || t === ZEBRA || t === SOIL || t === PLAT) return false;
+    if (player.x === x && player.y === y) return false;
+  }
+  for (const n of npcs) if (n !== who && n.x === x && n.y === y) return false;
+  if (hen.active && who !== hen && hen.x === x && hen.y === y && !(who === 'player' && hen.follow)) return false;
+  if (who === 'player' && carAt(x, y)) return false;
+  return true;
+}
+function startMove(e, nx, ny) { e.mv = { fx: e.x, fy: e.y, t: 0 }; e.x = nx; e.y = ny; }
+function stepMove(e, dt) { if (!e.mv) return false; e.mv.t += dt * e.speed; if (e.mv.t >= 1) { e.mv = null; return true; } return false; }
+function rpos(e) { if (!e.mv) return [e.x * TS, e.y * TS]; const t = e.mv.t; return [(e.mv.fx + (e.x - e.mv.fx) * t) * TS, (e.mv.fy + (e.y - e.mv.fy) * t) * TS]; }
+function dirTo(dx, dy) { return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); }
+
+// ---------- daily setup ----------
+const COIN_SPOTS = [];
+for (let y = 4; y < H; y++) for (let x = 0; x < W; x++) { const t = get(x, y); if ((t === GRASS || t === PAVE || t === PAVE2) && !propAt(x, y) && !doorAt(x, y)) COIN_SPOTS.push([x, y]); }
+const TESS_SPOTS = [[1, 38], [58, 39], [47, 48]];
+function setupDay() {
+  pickups = pickups.filter(p => p.kind === 'tessera');
+  const seed = S.day * 7919;
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = COIN_SPOTS[hash(seed, i) % COIN_SPOTS.length];
+    if (!S.daily['coin' + i]) pickups.push({ kind: 'coin', x, y, id: 'coin' + i, value: [50, 100, 120, 200][hash(i, seed) % 4] });
+  }
+  refreshTesserae();
+  weeds = (today('weeds') || []).slice();
+}
+function refreshTesserae() {
+  pickups = pickups.filter(p => p.kind !== 'tessera');
+  if (S.q.villa === 1) TESS_SPOTS.forEach((s, i) => { if (!S.tess.includes(i)) pickups.push({ kind: 'tessera', x: s[0], y: s[1], id: i }); });
+}
+function newDay() {
+  S.day++; S.min = 8 * 60; S.energy = 100; S.daily = {}; feedUntil = -1;
+  S.px = 4; S.py = 17; placePlayer();
+  setupDay();
+}
+function placePlayer() { player.x = S.px; player.y = S.py; player.dir = S.dir || 'down'; player.mv = null; if (hen.follow) { const spot = [[0,1],[1,0],[-1,0],[0,-1]].find(([dx,dy]) => passable(player.x+dx, player.y+dy, hen)); if (spot) { hen.x = player.x + spot[0]; hen.y = player.y + spot[1]; } hen.mv = null; } }
+function syncHen() { hen.active = S.q.hen === 1 || S.q.hen === 2; hen.follow = S.q.hen === 2; }
+
+// ---------- critters ----------
+for (let i = 0; i < 6; i++) ducks.push({ x: (39 + i * 2.2) * TS, y: (44 + (i % 2)) * TS, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 4, drake: i % 2 === 0 });
+function spawnPigeon(p) { p.x = (28 + Math.random() * 5) * TS; p.y = (14 + Math.random() * 25) * TS; p.fly = 0; p.alpha = 1; p.peck = Math.random() * 3; return p; }
+for (let i = 0; i < 5; i++) pigeons.push(spawnPigeon({}));
+
+// ---------- static map render ----------
+const stat = document.createElement('canvas'); stat.width = W * TS; stat.height = H * TS;
+const sc = stat.getContext('2d');
+function px(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(x, y, w, h); }
+function speckle(c, x, y, r, n, cols) { let s = r; for (let i = 0; i < n; i++) { s = (s * 1103515245 + 12345) >>> 0; const k = s >>> 8; px(c, x + (k % 16), y + ((k >> 4) % 15), 1, (k & 1) + 1, cols[(k >> 9) % cols.length]); } }
+function drawGrass(c, x, y, r) { px(c, x, y, 16, 16, '#6ea84e'); speckle(c, x, y, r, 6, ['#5f9843', '#80b95e', '#5a9140']); }
+function drawTile(tx, ty) {
+  const c = sc, t = get(tx, ty), x = tx * TS, y = ty * TS, r = hash(tx, ty);
+  switch (t) {
+    case GRASS: drawGrass(c, x, y, r); break;
+    case FLOWER: drawGrass(c, x, y, r); { let s = r; for (let i = 0; i < 5; i++) { s = (s * 1103515245 + 12345) >>> 0; const k = s >>> 8; const fx = x + 1 + (k % 13), fy = y + 1 + ((k >> 4) % 13); px(c, fx, fy, 2, 2, ['#e8546b','#f2c14e','#f4f1ea','#b77be0'][(k >> 9) % 4]); px(c, fx, fy + 2, 1, 1, '#3f7a30'); } } break;
+    case PAVE: px(c, x, y, 16, 16, '#c7c1b4'); px(c, x, y + 7, 16, 1, '#b2ab9e'); px(c, x + ((ty % 2) ? 4 : 12), y, 1, 7, '#b2ab9e'); px(c, x + ((ty % 2) ? 12 : 4), y + 8, 1, 8, '#b2ab9e'); px(c, x, y + 15, 16, 1, '#b2ab9e'); break;
+    case PAVE2: px(c, x, y, 16, 16, '#cdb08d'); for (let j = 0; j < 4; j++) for (let i = 0; i < 2; i++) { const ox = ((j % 2) ? 4 : 0); px(c, x + i * 8 + ox, y + j * 4, 1, 4, '#b8987a'); } for (let j = 1; j < 4; j++) px(c, x, y + j * 4, 16, 1, '#bfa181'); if (r % 7 === 0) px(c, x + 5, y + 9, 3, 2, '#d8c0a0'); break;
+    case ROAD: case ZEBRA: px(c, x, y, 16, 16, '#4b5059'); speckle(c, x, y, r, 4, ['#555b64', '#43474f']);
+      if (ty === 10) px(c, x, y, 16, 1, '#8c8a85');
+      if (ty === 11) { px(c, x, y + 15, 16, 1, '#8c8a85'); if (tx % 2 === 0 && t === ROAD) px(c, x + 2, y, 10, 1, '#e9e6dc'); }
+      if (t === ZEBRA) { px(c, x + 1, y + 2, 14, 4, '#eeece4'); px(c, x + 1, y + 10, 14, 4, '#eeece4'); }
+      else if ((ty === 10 || ty === 11) && ((tx >= 26 && tx <= 28) || (tx >= 32 && tx <= 34))) { px(c, x + 3, y + (ty === 10 ? 2 : 12), 2, 2, '#e9e6dc'); px(c, x + 11, y + (ty === 10 ? 2 : 12), 2, 2, '#e9e6dc'); }
+      break;
+    case WATER: px(c, x, y, 16, 16, '#3d84b2'); speckle(c, x, y, r, 3, ['#4b93c0', '#3576a1']);
+      if (get(tx, ty - 1) !== WATER && get(tx, ty - 1) !== BRIDGE) px(c, x, y, 16, 2, '#7d6a4e');
+      if (get(tx, ty + 1) !== WATER && get(tx, ty + 1) !== BRIDGE) px(c, x, y + 15, 16, 1, '#2d6a90');
+      if (get(tx - 1, ty) !== WATER && get(tx - 1, ty) !== BRIDGE) px(c, x, y, 2, 16, '#7d6a4e');
+      if (get(tx + 1, ty) !== WATER && get(tx + 1, ty) !== BRIDGE) px(c, x + 14, y, 2, 16, '#7d6a4e');
+      break;
+    case BRIDGE: px(c, x, y, 16, 16, '#3d84b2'); px(c, x + 1, y, 14, 16, '#a87b4c'); for (let j = 0; j < 16; j += 3) px(c, x + 1, y + j, 14, 1, '#8c6338'); px(c, x, y, 2, 16, '#6e4a26'); px(c, x + 14, y, 2, 16, '#6e4a26'); break;
+    case TREE: drawGrass(c, x, y, r); px(c, x + 7, y + 11, 3, 4, '#6b4a2e'); px(c, x + 3, y + 1, 10, 11, '#2f6b33'); px(c, x + 1, y + 3, 14, 7, '#2f6b33'); px(c, x + 2, y + 2, 12, 9, '#2f6b33');
+      px(c, x + 4, y + 2, 6, 4, '#3f8a42'); px(c, x + 3, y + 4, 3, 3, '#3f8a42'); px(c, x + 5, y + 3, 2, 2, '#56a456'); px(c, x + 2, y + 10, 12, 1, '#245527'); px(c, x + 6, y + 15, 6, 1, 'rgba(0,0,0,.2)'); break;
+    case HEDGE: px(c, x, y, 16, 16, '#2e6431'); speckle(c, x, y, r, 10, ['#3b7a3c', '#24532a', '#468a45']); px(c, x, y + 14, 16, 2, '#1f4a24'); break;
+    case RAIL: px(c, x, y, 16, 16, '#857b6e'); speckle(c, x, y, r, 8, ['#988e80', '#6e665b', '#a39a8b']); for (let i = 1; i < 16; i += 4) px(c, x + i, y + 2, 2, 12, '#5e4636'); px(c, x, y + 4, 16, 1, '#c7ccd1'); px(c, x, y + 5, 16, 1, '#6b7177'); px(c, x, y + 11, 16, 1, '#c7ccd1'); px(c, x, y + 12, 16, 1, '#6b7177'); break;
+    case PLAT: px(c, x, y, 16, 16, '#b9b2a4'); px(c, x, y + 15, 16, 1, '#a59e91'); px(c, x + 8, y, 1, 16, '#a59e91'); if (ty === 3) { px(c, x, y, 16, 2, '#e9e4d8'); px(c, x, y + 3, 16, 2, '#e8c33c'); } break;
+    case FENCE: drawGrass(c, x, y, r); for (let i = 1; i < 16; i += 3) { px(c, x + i, y + 2, 2, 13, '#2c4f3a'); px(c, x + i, y + 1, 2, 1, '#3d6a50'); } px(c, x, y + 5, 16, 1, '#2c4f3a'); px(c, x, y + 11, 16, 1, '#2c4f3a'); break;
+    case DIRT: px(c, x, y, 16, 16, '#a07c58'); speckle(c, x, y, r, 6, ['#8d6a49', '#b58f69']); break;
+    case SOIL: px(c, x, y, 16, 16, '#6a4a32'); for (let j = 2; j < 16; j += 5) px(c, x, y + j, 16, 1, '#553a26'); { const k = r % 4; for (let i = 0; i < 3; i++) { px(c, x + 2 + i * 5, y + 4 + k, 1, 2, '#6fb04e'); px(c, x + 1 + i * 5, y + 3 + k, 3, 1, '#87c463'); } } break;
+    default: break;
+  }
+}
+function drawBuilding(b) {
+  const c = sc, x = b.x * TS, y = b.y * TS, w = b.w * TS, h = b.h * TS, s = b.door.s;
+  if (b.flat) {
+    px(c, x, y, w, h, b.roof); px(c, x + 2, y + 2, w - 4, h - 4, b.roof2); px(c, x + 4, y + 4, w - 8, h - 8, b.roof);
+    for (let j = y + 14; j < y + h - 18; j += 22) for (let i = x + 14; i < x + w - 22; i += 30) { px(c, i, j, 16, 10, '#7fa6c4'); px(c, i, j, 16, 2, '#a7c6dc'); px(c, i + 7, j, 1, 10, '#6890ad'); }
+    px(c, x + w - 30, y + h - 30, 12, 10, '#8a8f96'); px(c, x + w - 28, y + h - 28, 8, 6, '#6f747b');
+  } else if (b.house) {
+    px(c, x, y, w, h, b.roof); for (let j = y + 3; j < y + h; j += 4) px(c, x, j, w, 1, 'rgba(0,0,0,.13)');
+    px(c, x, y + Math.floor(h / 2) - 4, w, 2, 'rgba(255,255,255,.18)'); px(c, x, y + Math.floor(h / 2) - 2, w, 1, 'rgba(0,0,0,.25)');
+    px(c, x + w - 16, y + 2, 6, 8, '#7a4c3a'); px(c, x + w - 16, y + 2, 6, 2, '#5b3628');
+  } else {
+    px(c, x, y, w, h, b.roof); for (let j = y + 3; j < y + h; j += 4) px(c, x, j, w, 1, b.roof2);
+    for (let i = x + 4; i < x + w - 4; i += 8) if (hash(i, y) % 3 === 0) px(c, i, y + 2 + (hash(y, i) % Math.max(1, h - 12)), 3, 3, 'rgba(0,0,0,.18)');
+  }
+  // outline
+  px(c, x, y, w, 1, 'rgba(0,0,0,.45)'); px(c, x, y + h - 1, w, 1, 'rgba(0,0,0,.45)'); px(c, x, y, 1, h, 'rgba(0,0,0,.45)'); px(c, x + w - 1, y, 1, h, 'rgba(0,0,0,.45)');
+  // facade + door on the door side
+  const dx = b.door.x * TS, dy = b.door.y * TS, F = b.small ? 5 : 6;
+  const win = '#9cc3d8', winD = '#5f879c', door = '#5a3622';
+  if (s === 's' || s === 'n') {
+    const fy = s === 's' ? y + h - F : y;
+    px(c, x, fy, w, F, b.wall);
+    for (let i = x; i < x + w; i += TS) if (i !== dx) { px(c, i + 4, fy + 1, 8, F - 2, win); px(c, i + 4, fy + 1, 8, 1, winD); }
+    px(c, dx + 4, fy, 8, F, door); px(c, dx + 10, fy + 2, 1, 1, '#e2a645');
+    if (b.awn) { const ay = s === 's' ? fy - 3 : fy + F; for (let i = x; i < x + w; i += 4) px(c, i, ay, 4, 3, b.awn[((i - x) / 4) % 2]); }
+  } else {
+    const fx = s === 'e' ? x + w - F : x;
+    px(c, fx, y, F, h, b.wall);
+    for (let j = y; j < y + h; j += TS) if (j !== dy) { px(c, fx + 1, j + 4, F - 2, 8, win); px(c, fx + (s === 'e' ? F - 2 : 1), j + 4, 1, 8, winD); }
+    px(c, fx, dy + 3, F, 10, door); px(c, fx + (s === 'e' ? 2 : F - 3), dy + 8, 1, 1, '#e2a645');
+    if (b.awn) { const ax = s === 'e' ? fx - 3 : fx + F; for (let j = y; j < y + h; j += 4) px(c, ax, j, 3, 4, b.awn[((j - y) / 4) % 2]); }
+  }
+  if (b.id === 'station') { px(c, x + 6, y + 6, 7, 7, '#f4f1ea'); px(c, x + 9, y + 7, 1, 3, '#222'); px(c, x + 9, y + 9, 3, 1, '#222'); }
+  if (b.id === 'villa') { for (let i = x + 8; i < x + w - 8; i += 20) px(c, i, y + 8, 12, 6, '#a8c4cf'); }
+  if (b.id === 'priory') { px(c, x + w - 22, y + 4, 14, 14, '#6b5a4c'); px(c, x + w - 20, y + 6, 10, 10, '#857262'); }
+}
+function drawStaticProp(p) {
+  const c = sc, x = p.x * TS, y = p.y * TS;
+  switch (p.type) {
+    case 'lamp': px(c, x + 7, y + 3, 2, 12, '#2c333d'); px(c, x + 5, y + 14, 6, 2, '#2c333d'); px(c, x + 5, y + 1, 6, 3, '#2c333d'); px(c, x + 6, y + 2, 4, 1, '#f3d58a'); break;
+    case 'bench': px(c, x + 1, y + 6, 14, 3, '#8a5a32'); px(c, x + 1, y + 9, 14, 1, '#6b4325'); px(c, x + 1, y + 3, 14, 2, '#9c6a3e'); px(c, x + 2, y + 10, 1, 4, '#333'); px(c, x + 13, y + 10, 1, 4, '#333'); break;
+    case 'planter': px(c, x + 2, y + 7, 12, 8, '#7b6f63'); px(c, x + 2, y + 7, 12, 1, '#988b7d'); px(c, x + 3, y + 2, 10, 6, '#3f8a42'); px(c, x + 4, y + 3, 2, 2, '#e8546b'); px(c, x + 9, y + 2, 2, 2, '#f2c14e'); px(c, x + 7, y + 5, 2, 2, '#e8546b'); break;
+    case 'bin': px(c, x + 5, y + 6, 6, 9, '#2f5a3a'); px(c, x + 4, y + 5, 8, 2, '#244630'); px(c, x + 6, y + 8, 4, 1, '#c6a54a'); break;
+    case 'beacon': px(c, x + 7, y + 5, 2, 10, '#222'); for (let j = 6; j < 15; j += 2) px(c, x + 7, y + j, 2, 1, '#f4f1ea'); break;
+    case 'busstop': px(c, x + 7, y + 4, 2, 11, '#555'); px(c, x + 3, y + 0, 10, 6, '#c8282d'); px(c, x + 5, y + 2, 6, 2, '#f4f1ea'); px(c, x + 4, y + 7, 8, 4, '#f4f1ea'); break;
+    case 'shelter': px(c, x, y + 3, 16, 3, '#30363f'); px(c, x, y + 6, 16, 8, 'rgba(160,200,220,.45)'); px(c, x + (p.part ? 14 : 0), y + 6, 2, 9, '#30363f'); if (!p.part) px(c, x + 4, y + 10, 10, 2, '#5b6470'); break;
+    case 'phonebox': px(c, x + 3, y + 1, 10, 15, '#b8222a'); px(c, x + 3, y + 1, 10, 2, '#8e1a20'); px(c, x + 5, y + 4, 6, 9, '#c9dde6'); px(c, x + 7, y + 4, 1, 9, '#b8222a'); px(c, x + 5, y + 8, 6, 1, '#b8222a'); px(c, x + 5, y + 2, 6, 1, '#f4f1ea'); break;
+    case 'postbox': px(c, x + 4, y + 3, 8, 12, '#c4232b'); px(c, x + 3, y + 2, 10, 3, '#a51d24'); px(c, x + 5, y + 7, 6, 1, '#222'); px(c, x + 6, y + 10, 4, 2, '#f4f1ea'); break;
+    case 'board': px(c, x + 2, y + 1, 12, 10, '#6e4a2c'); px(c, x + 3, y + 2, 10, 8, '#e6d9b8'); px(c, x + 4, y + 3, 4, 3, '#e2a645'); px(c, x + 9, y + 4, 3, 4, '#8fb3d0'); px(c, x + 4, y + 7, 4, 2, '#d9786a'); px(c, x + 4, y + 11, 1, 4, '#4a3020'); px(c, x + 11, y + 11, 1, 4, '#4a3020'); break;
+    case 'pitch': for (const [a, b2] of [[5,4],[6,3],[7,3],[8,3],[9,3],[9,4],[9,5],[9,6],[9,7],[9,8],[9,9],[8,10],[7,10],[6,10],[6,9],[7,9],[8,9],[5,4],[5,5],[5,6],[5,7],[5,8],[5,9],[4,10],[3,10],[3,9],[4,9]]) px(c, x + a, y + b2 + 1, 1, 1, '#f4f1ea'); px(c, x, y, 16, 1, 'rgba(255,255,255,.25)'); px(c, x, y + 15, 16, 1, 'rgba(255,255,255,.25)'); px(c, x, y, 1, 16, 'rgba(255,255,255,.25)'); px(c, x + 15, y, 1, 16, 'rgba(255,255,255,.25)'); break;
+    case 'van': if (!p.part) { px(c, x, y + 2, 32, 13, '#f2eee6'); px(c, x, y + 2, 32, 2, '#f4b8c8'); px(c, x + 22, y + 4, 9, 5, '#8fb3d0'); px(c, x + 3, y + 5, 15, 6, '#5a3a2a'); px(c, x + 4, y + 6, 13, 4, '#f2c14e'); px(c, x + 3, y + 14, 5, 2, '#222'); px(c, x + 23, y + 14, 5, 2, '#222'); px(c, x + 12, y - 2, 6, 4, '#f4b8c8'); px(c, x + 13, y - 3, 4, 2, '#f2eee6'); } break;
+    case 'coop': if (!p.part) { px(c, x + 1, y + 3, 30, 12, '#8a5a32'); px(c, x, y + 1, 32, 4, '#5e3c20'); px(c, x + 4, y + 7, 6, 8, '#3a2412'); for (let i = 14; i < 30; i += 3) px(c, x + i, y + 6, 1, 8, '#c7b89a'); px(c, x + 14, y + 6, 16, 1, '#c7b89a'); } break;
+    case 'sign': px(c, x + 7, y + 7, 2, 8, '#5a3a22'); px(c, x + 1, y + 2, 14, 7, '#2e6431'); px(c, x + 2, y + 3, 12, 5, '#3f7a40'); px(c, x + 3, y + 5, 10, 1, '#e6d9b8'); break;
+  }
+}
+function buildStatic() {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) drawTile(x, y);
+  for (const b of BUILDINGS) drawBuilding(b);
+  for (const p of props) drawStaticProp(p);
+}
+buildStatic();
+
+// ---------- sprite drawing ----------
+const cv = $('#cv'), ctx = cv.getContext('2d');
+function R(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
+function drawHat(x, y, hat, dir) {
+  const f = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+  switch (hat) {
+    case 'flat_cap': R(x + 4, y, 8, 3, '#7a6a52'); R(x + 4, y, 8, 1, '#8f7e64'); if (dir === 'down') R(x + 4, y + 3, 8, 1, '#5d503d'); if (f) R(f > 0 ? x + 11 : x + 2, y + 2, 3, 1, '#5d503d'); break;
+    case 'bobble_hat': R(x + 4, y, 8, 3, '#c8282d'); R(x + 4, y + 2, 8, 1, '#f4f1ea'); R(x + 7, y - 2, 2, 2, '#f4f1ea'); break;
+    case 'bowler': R(x + 5, y - 2, 6, 3, '#1f1f22'); R(x + 3, y + 1, 10, 1, '#1f1f22'); R(x + 6, y - 2, 2, 1, '#3a3a40'); break;
+    case 'chicken_hat': R(x + 4, y - 2, 8, 4, '#d9a441'); R(x + 5, y - 3, 6, 1, '#d9a441'); R(x + 6, y - 5, 4, 2, '#c8282d'); R(x + 7, y - 6, 2, 1, '#c8282d'); if (dir !== 'up') { R(f >= 0 ? x + 12 : x + 2, y - 1, 2, 1, '#f2a33a'); R(f > 0 ? x + 10 : f < 0 ? x + 5 : x + 6, y - 2, 1, 1, '#222'); if (!f) R(x + 9, y - 2, 1, 1, '#222'); } break;
+    case 'roman_helmet': R(x + 4, y - 1, 8, 4, '#c9a24a'); R(x + 4, y + 2, 8, 1, '#9c7a2e'); R(x + 7, y - 5, 2, 4, '#c8282d'); R(x + 6, y - 4, 4, 2, '#c8282d'); break;
+    case 'paper_crown': R(x + 4, y - 1, 8, 3, '#f2c94c'); R(x + 4, y - 3, 2, 2, '#f2c94c'); R(x + 7, y - 3, 2, 2, '#f2c94c'); R(x + 10, y - 3, 2, 2, '#f2c94c'); R(x + 7, y, 2, 1, '#c8282d'); break;
+  }
+}
+function drawPerson(x, y, L, dir, walking, phase) {
+  x = Math.round(x); y = Math.round(y);
+  const bob = walking ? 1 : 0;
+  R(x + 4, y + 14, 8, 2, 'rgba(0,0,0,.22)');
+  y -= bob;
+  // legs
+  const lA = walking && phase === 0 ? 1 : 0, lB = walking && phase === 1 ? 1 : 0;
+  R(x + 5, y + 11, 2, 4 - lA, L.legs); R(x + 9, y + 11, 2, 4 - lB, L.legs);
+  R(x + 5, y + 14 - lA, 2, 1, '#1d1d22'); R(x + 9, y + 14 - lB, 2, 1, '#1d1d22');
+  // body
+  R(x + 4, y + 7, 8, 5, L.shirt); R(x + 4, y + 11, 8, 1, 'rgba(0,0,0,.18)');
+  if (dir === 'left' || dir === 'right') { const ax = x + 7 + (walking ? (phase ? 1 : -1) : 0); R(ax, y + 8, 2, 3, L.shirt); R(ax, y + 11, 2, 1, L.skin); }
+  else { R(x + 3, y + 7, 1, 4, L.shirt); R(x + 12, y + 7, 1, 4, L.shirt); R(x + 3, y + 11, 1, 1, L.skin); R(x + 12, y + 11, 1, 1, L.skin); }
+  // head
+  R(x + 4, y + 1, 8, 7, L.skin);
+  const hcol = L.hair, st = L.style;
+  if (st === 'bald') {
+    if (dir === 'up') R(x + 4, y + 4, 8, 2, hcol);
+    else if (dir === 'down') { R(x + 4, y + 3, 1, 3, hcol); R(x + 11, y + 3, 1, 3, hcol); R(x + 6, y + 1, 2, 1, 'rgba(255,255,255,.35)'); }
+    else R(dir === 'left' ? x + 10 : x + 4, y + 3, 2, 3, hcol);
+  } else {
+    if (dir === 'up') { R(x + 4, y + 1, 8, 6, hcol); if (st === 'long') R(x + 4, y + 7, 8, 3, hcol); }
+    else if (dir === 'down') { R(x + 4, y + 1, 8, 2, hcol); R(x + 4, y + 3, 1, 2, hcol); R(x + 11, y + 3, 1, 2, hcol); if (st === 'long') { R(x + 3, y + 2, 1, 7, hcol); R(x + 12, y + 2, 1, 7, hcol); } }
+    else { R(x + 4, y + 1, 8, 2, hcol); R(dir === 'left' ? x + 9 : x + 4, y + 3, 3, 3, hcol); if (st === 'long') R(dir === 'left' ? x + 10 : x + 4, y + 6, 2, 4, hcol); }
+    if (st === 'spiky') { R(x + 4, y, 1, 1, hcol); R(x + 6, y - 1, 1, 2, hcol); R(x + 9, y - 1, 1, 2, hcol); R(x + 11, y, 1, 1, hcol); }
+    if (st === 'bun') R(x + 6, y - 2, 4, 3, hcol);
+  }
+  if (dir === 'down') { R(x + 6, y + 5, 1, 1, '#22201e'); R(x + 9, y + 5, 1, 1, '#22201e'); R(x + 5, y + 6, 1, 1, 'rgba(230,110,110,.35)'); R(x + 10, y + 6, 1, 1, 'rgba(230,110,110,.35)'); }
+  else if (dir === 'left') R(x + 5, y + 5, 1, 1, '#22201e');
+  else if (dir === 'right') R(x + 10, y + 5, 1, 1, '#22201e');
+  if (L.hat) drawHat(x, y, L.hat, dir);
+}
+function drawHen(x, y, dir, t) {
+  x = Math.round(x); y = Math.round(y);
+  const flip = dir === 'left', peck = Math.sin(t * 6) > 0.85 ? 1 : 0;
+  R(x + 3, y + 13, 10, 2, 'rgba(0,0,0,.2)');
+  R(x + 6, y + 12, 1, 2, '#e3a030'); R(x + 9, y + 12, 1, 2, '#e3a030');
+  R(x + 3, y + 6, 10, 7, '#d9a441'); R(x + 4, y + 5, 8, 1, '#d9a441'); R(x + 4, y + 9, 6, 2, '#c08a2e');
+  const hx = flip ? x + 2 : x + 10;
+  R(flip ? x + 12 : x + 2, y + 4, 2, 4, '#c08a2e');
+  R(hx, y + 2 + peck, 4, 4, '#e0ae4e'); R(hx + 1, y + 1 + peck, 2, 1, '#c8282d'); R(flip ? hx - 1 : hx + 4, y + 3 + peck, 1, 1, '#f2a33a'); R(flip ? hx + 1 : hx + 2, y + 3 + peck, 1, 1, '#222'); R(hx + 1, y + 6 + peck, 2, 1, '#c8282d');
+}
+function drawCar(c) {
+  const x = Math.round(c.x * TS), y = c.lane * TS, w = Math.round(c.len * TS), dir = c.lane === 11 ? 1 : -1;
+  R(x + 1, y + 13, w - 2, 2, 'rgba(0,0,0,.3)');
+  if (c.bus) {
+    R(x, y + 1, w, 13, '#c8282d'); R(x, y + 1, w, 2, '#e0464b');
+    for (let i = x + 4; i < x + w - 6; i += 6) R(i, y + 4, 4, 3, '#24303c');
+    R(dir > 0 ? x + w - 4 : x + 1, y + 3, 3, 9, '#24303c');
+    R(x + 6, y + 9, 12, 3, '#f2c94c'); ctx.fillStyle = '#222'; ctx.font = '600 3px monospace'; ctx.fillText(c.route, x + 8, y + 12);
+    R(x + 4, y + 13, 4, 2, '#111'); R(x + w - 8, y + 13, 4, 2, '#111');
+    return;
+  }
+  R(x + 1, y + 3, w - 2, 10, c.color); R(x + 3, y + 2, w - 6, 1, c.color);
+  const fx = dir > 0 ? x + w - 9 : x + 4;
+  R(fx, y + 4, 5, 8, '#2a3440'); R(dir > 0 ? x + 5 : x + w - 10, y + 4, 4, 8, '#2a3440');
+  R(x + 1, y + 6, w - 2, 1, 'rgba(255,255,255,.25)');
+  R(dir > 0 ? x + w - 2 : x, y + 4, 2, 2, '#fff6c8'); R(dir > 0 ? x + w - 2 : x, y + 10, 2, 2, '#fff6c8');
+  R(dir > 0 ? x : x + w - 2, y + 4, 1, 2, '#d33'); R(dir > 0 ? x : x + w - 2, y + 10, 1, 2, '#d33');
+}
+function drawTrain(t) {
+  const y = t.track * TS + 2, n = 4, cl = 58;
+  for (let i = 0; i < n; i++) {
+    const x = Math.round(t.x * TS + i * (cl + 2));
+    R(x, y, cl, 12, '#e3e6eb'); R(x, y, cl, 2, '#b9bfc8'); R(x, y + 8, cl, 4, '#2c5592');
+    for (let k = x + 6; k < x + cl - 6; k += 8) R(k, y + 3, 5, 4, '#33414f');
+    R(x + 2, y + 3, 3, 8, '#f0c419'); R(x + cl - 5, y + 3, 3, 8, '#f0c419');
+    if (i === 0 && t.dir < 0) { R(x, y, 4, 12, '#f0c419'); R(x + 1, y + 3, 2, 3, '#2a3440'); }
+    if (i === n - 1 && t.dir > 0) { R(x + cl - 4, y, 4, 12, '#f0c419'); R(x + cl - 3, y + 3, 2, 3, '#2a3440'); }
+  }
+}
+
+// ---------- camera / resize ----------
+let zoom = 3, vw = 0, vh = 0, dpr = 1;
+function resize() {
+  const r = cv.getBoundingClientRect();
+  dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+  zoom = Math.max(2, Math.round(Math.min(cv.width / (TS * 15), cv.height / (TS * 10.5))));
+  vw = cv.width / zoom; vh = cv.height / zoom;
+}
+new ResizeObserver(resize).observe(cv);
+resize();
+
+// ---------- UI: dialogue & menus ----------
+let ui = null, bumpLock = 0, titleOpen = true, pendingCert = false;
+const dlg = $('#dlg'), dWho = $('#dWho'), dTxt = $('#dTxt'), dOpts = $('#dOpts'), dNext = $('#dNext');
+const heldDirs = [];
+function openUI(u) { ui = u; heldDirs.length = 0; padRelease(); }
+function closeUI() {
+  ui = null; dlg.hidden = true; bumpLock = performance.now() + 250; hudUpdate(); save();
+  setTimeout(() => { if (!ui && pendingCert) { pendingCert = false; showCert(); } }, 60);
+}
+function talk(who, ...lines) {
+  return new Promise(res => { openUI({ type: 'talk', who, lines, i: 0, res }); showLine(); });
+}
+function showLine() {
+  const u = ui; dlg.hidden = false; dWho.textContent = u.who || ''; dWho.hidden = !u.who; dOpts.innerHTML = ''; dNext.hidden = false;
+  u.full = u.lines[u.i]; u.shown = 0; u.typing = true; dTxt.textContent = '';
+}
+function advanceTalk() {
+  const u = ui; if (!u || u.type !== 'talk') return;
+  if (u.typing) { u.shown = u.full.length; u.typing = false; dTxt.textContent = u.full; return; }
+  u.i++;
+  if (u.i < u.lines.length) showLine(); else { closeUI(); u.res(); }
+}
+function choose(who, text, opts) {
+  return new Promise(res => {
+    openUI({ type: 'choose', opts, sel: Math.max(0, opts.findIndex(o => !o.disabled)), res });
+    dlg.hidden = false; dWho.textContent = who || ''; dWho.hidden = !who; dTxt.textContent = text; dNext.hidden = true;
+    dOpts.innerHTML = '';
+    opts.forEach((o, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.disabled = !!o.disabled;
+      b.innerHTML = '<span></span><span class="n"></span>'; b.firstChild.textContent = o.label; b.lastChild.textContent = o.note || '';
+      b.addEventListener('click', e => { e.stopPropagation(); pickOpt(i); });
+      dOpts.appendChild(b);
+    });
+    selOpt(ui.sel);
+  });
+}
+function selOpt(i) { ui.sel = i; [...dOpts.children].forEach((b, k) => b.classList.toggle('sel', k === i)); dOpts.children[i] && dOpts.children[i].scrollIntoView({ block: 'nearest' }); }
+function pickOpt(i) { const u = ui; if (!u || u.type !== 'choose') return; const o = u.opts[i]; if (!o || o.disabled) { sfx('bump'); return; } sfx('blip'); closeUI(); u.res(o.value === undefined ? null : o.value); }
+function moveSel(d) { const u = ui, n = u.opts.length; let i = u.sel; for (let k = 0; k < n; k++) { i = (i + d + n) % n; if (!u.opts[i].disabled) break; } selOpt(i); }
+dlg.addEventListener('click', () => { if (ui && ui.type === 'talk') advanceTalk(); });
+
+// toasts & zone banner
+const toastsEl = $('#toasts');
+function toast(msg, gold) { const t = document.createElement('div'); t.className = 'toast' + (gold ? ' gold' : ''); t.textContent = msg; toastsEl.appendChild(t); while (toastsEl.children.length > 4) toastsEl.firstChild.remove(); setTimeout(() => t.remove(), 3200); }
+const zoneEl = $('#zone'); let zoneName = '', zoneTimer = 0;
+function zoneOf(x, y) {
+  if (y >= 41) return 'Priory Gardens';
+  if (y >= 10 && y <= 11) return 'Crofton Road';
+  if (y <= 9) return x <= 11 ? 'Crofton Roman Villa' : x >= 39 ? 'The Allotments' : 'Orpington Station';
+  if (x <= 19) return 'Cook Close';
+  if (x >= 41) return 'The Walnuts';
+  return 'High Street';
+}
+
+// ---------- passport ----------
+function stamp(id) {
+  if (S.stamps[id]) return;
+  S.stamps[id] = S.day; sfx('stamp');
+  const s = STAMPS.find(s => s[0] === id);
+  toast('Passport stamped: ' + s[1] + ' (' + Object.keys(S.stamps).length + '/10)', true);
+  addFun(5);
+  if (Object.keys(S.stamps).length >= 10 && !S.done) { S.done = true; pendingCert = true; }
+}
+
+// ---------- shop helpers ----------
+async function shopLoop(who, hello, build) {
+  let msg = hello;
+  for (;;) {
+    const opts = build().concat([{ label: 'Leave', value: null }]);
+    const pick = await choose(who, msg, opts);
+    if (!pick) return;
+    const r = await pick();
+    if (r === 'leave') return;
+    msg = typeof r === 'string' ? r : 'Anything else?';
+  }
+}
+function buy(id, price, line) {
+  return { label: ITEMS[id].name, note: fmt(price), value: async () => {
+    if (S.money < price) { sfx('bump'); return "You're a bit short for that, love."; }
+    pay(price); give(id); sfx('buy'); hudUpdate();
+    return line || (ITEMS[id].name + ', there you go. Anything else?');
+  } };
+}
+function eatNow(id) { const it = ITEMS[id]; take(id); addEnergy(it.en || 0); addFun(it.fun || 0); S.stats.eaten++; sfx('buy'); hudUpdate(); }
+async function closedSign(b, extra) { const [o] = HOURS[b.id]; await talk(null, 'The sign on the door of ' + b.name + ' says CLOSED. Open from ' + hhmm(o) + '.' + (extra ? '\n' + extra : '')); }
+
+// ---------- quiz ----------
+const QUIZ = [
+  ['Which famous breed of chicken is named after the town?', ['The Orpington', 'The Bromley Bantam', 'The Kentish Leghorn', 'The Croydon Silkie']],
+  ['Who bred the first Orpington chickens, back in the 1880s?', ['William Cook', 'Charles Darwin', 'Samuel Pepys', 'Isambard Kingdom Brunel']],
+  ['In 1962 Orpington caused a national sensation at a by-election. Which party won it?', ['The Liberals', 'Labour', 'The Conservatives', 'The Monster Raving Loony Party']],
+  ['Which river rises in Priory Gardens?', ['The River Cray', 'The River Ravensbourne', 'The River Thames', 'The River Medway']],
+  ['Since 1965, Orpington has been part of which London borough?', ['Bromley', 'Bexley', 'Croydon', 'Lewisham']],
+  ['What can you visit right beside Orpington station?', ['A Roman villa', 'A Norman castle', 'A Viking longship', 'A Tudor palace']],
+  ["Charles Darwin's home, Down House, is in which nearby village?", ['Downe', 'Farnborough', 'Chelsfield', "Pratt's Bottom"]],
+  ["What's Orpington's postcode area?", ['BR6', 'SE9', 'DA14', 'CR0']],
+  ['The best-known Orpington chicken is the Buff. What colour is it?', ['Golden yellow-brown', 'Bright blue', 'Black with white spots', 'Pink']],
+  ['The Priory in Priory Gardens dates back to which era?', ['The Middle Ages', 'The 1960s', 'Roman times', 'The Victorian era']],
+];
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+async function pubQuiz() {
+  const qs = shuffle(QUIZ).slice(0, 3); let right = 0;
+  await talk('Jackie', "Quiz time! Three questions, £2 a right answer, and a paper crown if you get the lot." + (has('library_card') ? "\n(Your library card is burning a hole in your pocket. You have a hunch about the right answers.)" : ''));
+  for (let i = 0; i < qs.length; i++) {
+    const [qText, answers] = qs[i]; const order = shuffle(answers);
+    const pick = await choose('Question ' + (i + 1) + ' of 3', qText, order.map(a => ({ label: a, note: has('library_card') && a === answers[0] ? 'hunch' : '', value: a })));
+    if (pick === answers[0]) { right++; sfx('coin'); await talk('Jackie', pick + '. Correct!'); }
+    else { sfx('miss'); await talk('Jackie', (pick ? 'Ooh, no. ' : 'No answer? ') + 'It was ' + answers[0] + '.'); }
+  }
+  if (right) earn(right * 200);
+  addFun(4 + right * 2); advance(45);
+  stamp('pub');
+  if (right === 3 && !has('paper_crown') && S.hat !== 'paper_crown') { give('paper_crown'); await talk('Jackie', "Three out of three! Here's your paper crown, your majesty. It's in your bag."); }
+  else await talk('Jackie', right + ' out of 3. ' + (right ? "That's " + fmt(right * 200) + ' for you.' : 'Better luck tomorrow!'));
+}
+
+// ---------- building handlers ----------
+const ENTER = {
+  async station(b) {
+    stamp('station');
+    await shopLoop('Ticket office', "Morning! Where can I send you today? Platform 2 for London, if anyone asks.", () => [
+      { label: 'Day return to London', note: fmt(1400), value: async () => {
+        if (hour() >= 16) return "Last sensible train for a day trip has gone. Try tomorrow morning.";
+        if (S.money < 1400) return "It's £14 for a day return, I'm afraid.";
+        pay(1400); sfx('horn'); advance(6 * 60); addEnergy(-20); addFun(25); give('london_keyring'); stamp('london');
+        await talk(null, 'You ride the train up to London Bridge, wander along the South Bank, wave at Big Ben, and eat an overpriced sandwich.', 'By the time the train rolls back into Orpington your feet ache and you have a Big Ben keyring.');
+        return 'leave';
+      } },
+      { label: 'Check the departures board', value: async () => { await talk(null, '08:04  London Bridge ..... DELAYED (leaves on the line)\n08:11  Charing Cross ..... ON TIME (allegedly)\n08:19  Sevenoaks ..... CANCELLED (driver saw a fox)'); return 'Lovely board, isn\'t it? Anything else?'; } },
+    ]);
+  },
+  async villa(b) {
+    if (!isOpen('villa')) return closedSign(b, 'Tessa is usually out front, though.');
+    if (today('villaVisit')) return talk(null, "You've already had a good look round today. The hypocaust isn't going anywhere.");
+    setToday('villaVisit', 1); addFun(4); advance(20);
+    await talk(null, 'Inside the cover building you walk around the remains of a Roman farmhouse: room outlines, tiled floors and the hypocaust, the underfloor heating that kept somebody warm 1,800 years ago.', 'You feel very old and very new at the same time.');
+  },
+  async cafe(b) {
+    if (!isOpen('cafe')) return closedSign(b);
+    await shopLoop('Gianni', "Ciao! Best coffee this side of Petts Wood. What can I get you?", () => [buy('flat_white', 280), buy('hot_choc', 250), buy('bacon_bap', 350, 'Bacon bap. Brown sauce is already on. Trust me.')]);
+  },
+  async bakery(b) {
+    if (!isOpen('bakery')) return closedSign(b);
+    await shopLoop('Sue', "Hello lovely! Sausage rolls are still warm.", () => [buy('sausage_roll', 160), buy('iced_bun', 120), buy('bread', 100, "Yesterday's loaf. If you're feeding the ducks, tear it small and go easy.")]);
+  },
+  async charity(b) {
+    if (!isOpen('charity')) return closedSign(b);
+    await shopLoop('Pat', "Welcome to Second Chances! Every penny goes to the hospice. Have a rummage.", () => {
+      const o = [buy('flat_cap', 300), buy('bobble_hat', 200), buy('bowler', 500)];
+      if (S.q.library === 1 && !has('hen_book')) o.unshift({ label: "The Hen Fancier's Handbook", note: fmt(100), value: async () => {
+        if (S.money < 100) return "It's a pound, love."; pay(100); give('hen_book'); sfx('buy');
+        return "Oh, that old thing? Came in a box of books years ago. Library stamp inside, you say? Well I never.";
+      } });
+      o.push({ label: 'Mystery bric-a-brac', note: fmt(100), value: async () => {
+        const left = BRIC.filter(id => !S.bric.includes(id));
+        if (!left.length) return "You've cleaned me out of oddities! Come back when someone clears their loft.";
+        if (S.money < 100) return "It's a pound, love.";
+        const id = left[Math.floor(Math.random() * left.length)]; pay(100); give(id); S.bric.push(id); addFun(3); sfx('buy');
+        return 'Pat rummages in a box and hands you: ' + ITEMS[id].name + '. ' + ITEMS[id].desc;
+      } });
+      return o;
+    });
+  },
+  async news(b) {
+    if (!isOpen('news')) return closedSign(b);
+    await shopLoop('Raj', "Alright? Papers, sweets, lottery for the optimists. What'll it be?", () => {
+      const o = [buy('pick_mix', 150, "Pick 'n' mix. I saw you take an extra cola bottle. I'll allow it."),
+        { label: 'Read the local paper', note: fmt(80), value: async () => { if (S.money < 80) return "80p, mate."; pay(80); addFun(2); advance(10);
+          const h = ['HEN ON THE RUN: Priory Gardens poultry drama enters third day', 'Council confirms pothole on Crofton Road is "a feature"', 'Local man claims Orpington is in Kent. Neighbour claims it is in London. Both claim to be right.', 'Ducks demand better bread, say experts', 'Roman villa volunteers lose tiny tiles, again'];
+          await talk(null, 'The front page reads:\n"' + h[(S.day + S.stats.steps) % h.length] + '"'); return 'Gripping stuff. Anything else?'; } }];
+      const pr = today('paper');
+      if (!pr) o.unshift({ label: 'Ask about a paper round', note: 'job', value: async () => {
+        const houses = shuffle([1, 2, 3, 4, 5, 6, 7]).slice(0, 5).sort((a, b) => a - b);
+        setToday('paper', { state: 1, todo: houses }); give('newspaper', 5);
+        return "My paper boy's off sick. Five papers to Cook Close, numbers " + houses.map(h => h + 1).join(', ') + '. Walk into the door and pop it through the letterbox. Come back for £8 when you\'re done.';
+      } });
+      else if (pr.state === 1 && !pr.todo.length) o.unshift({ label: "I've done the paper round", value: async () => { pr.state = 2; earn(800); addFun(3); return 'Every one delivered? Champion. Here\'s your eight quid.'; } });
+      else if (pr.state === 1) o.unshift({ label: 'Which houses again?', value: async () => 'Cook Close, numbers ' + pr.todo.map(h => h + 1).join(', ') + '. West of the High Street.' });
+      return o;
+    });
+  },
+  async chippy(b) {
+    if (!isOpen('chippy')) return closedSign(b);
+    await shopLoop('Maria', "Salt and vinegar on everything, unless you say otherwise. Nobody says otherwise.", () => [buy('chips', 320), buy('cod_chips', 750), buy('pickled_egg', 100, 'A pickled egg. Brave. I respect it.')]);
+  },
+  async music(b) {
+    if (!isOpen('music')) return closedSign(b);
+    await shopLoop('Lou', "Welcome to Strings 'n' Things. Please don't play Wonderwall on the display guitars.", () => {
+      const o = [buy('guitar_string', 400, 'Top E. The thin one. Snaps if you look at it funny.'), buy('kazoo', 300, "A kazoo. The instrument of kings. Well, of somebody.")];
+      if (!today('piano')) o.push({ label: 'Have a go on the piano', value: async () => { setToday('piano', 1); addFun(4); advance(15); [523, 659, 784, 659, 523].forEach((f, i) => tone(f, 0.3, 'triangle', 0.05, i * 0.22)); await talk(null, 'You play the only thing you know: the first four notes of something. Lou claps politely.'); return 'Lovely. Anything else?'; } });
+      return o;
+    });
+  },
+  async pets(b) {
+    if (!isOpen('pets')) return closedSign(b);
+    await shopLoop('Aisha', "Hello! Mind Mr Biscuits, he's asleep in the dog beds again.", () => {
+      const o = [buy('chicken_feed', 200, "Chicken feed. Rattle the bag and any hen within sniffing distance will come running."), buy('chicken_hat', 600, 'A plush Buff Orpington hat. Our bestseller, oddly.')];
+      if (!today('cat')) o.push({ label: 'Stroke Mr Biscuits', value: async () => { setToday('cat', 1); addFun(3); await talk(null, 'Mr Biscuits, a ginger cat the size of a footstool, opens one eye and allows it. Purring commences.'); return 'He likes you. He bit the last person.'; } });
+      return o;
+    });
+  },
+  async barber(b) {
+    if (!isOpen('barber')) return closedSign(b);
+    await talk('Kostas', "Sit, sit! You want something different? I do everything. £8, any style, any colour.");
+    const style = await choose('Kostas', 'First, the style.', [
+      { label: 'Short back and sides', value: 'short' }, { label: 'Long and flowing', value: 'long' }, { label: 'Spiky', value: 'spiky' }, { label: 'Top knot', value: 'bun' }, { label: 'The full shave', value: 'bald' }, { label: 'Actually, no thanks', value: null }]);
+    if (!style) return talk('Kostas', 'No problem. You come back when you are brave.');
+    let colour = S.hair;
+    if (style !== 'bald') {
+      colour = await choose('Kostas', 'And the colour?', [
+        { label: 'Chestnut', value: '#5a3a22' }, { label: 'Ginger', value: '#c4652b' }, { label: 'Blonde', value: '#e2c16b' }, { label: 'Jet black', value: '#1b1b1f' }, { label: 'Silver fox', value: '#c9ccd2' },
+        { label: 'Buff Orpington gold', value: '#d9a441' }, { label: 'Pillar-box red', value: '#c8282d' }, { label: 'Electric blue', value: '#2f6fe0' }, { label: 'Lilac', value: '#b48fd6' }]);
+      if (!colour) colour = S.hair;
+    }
+    if (S.money < 800) return talk('Kostas', 'Ah, £8 my friend. Come back with £8.');
+    pay(800); S.style = style; S.hair = colour; addFun(6); advance(30); sfx('quest');
+    await talk('Kostas', 'Snip snip snip... Done! Look in the mirror. Beautiful. Your own mother would not recognise you.');
+  },
+  async pub(b) {
+    if (!isOpen('pub')) return closedSign(b, 'A chalkboard by the door says: PUB QUIZ DAILY, £1 ENTRY.');
+    await shopLoop('Jackie', "Welcome to the Buff Orpington. Named after the chicken, before you ask. Everyone asks.", () => {
+      const o = [buy('lemonade', 200), buy('ploughmans', 700)];
+      o.push(today('quiz') ? { label: 'Pub quiz', note: 'done today', disabled: true } : { label: 'Enter the pub quiz', note: fmt(100), value: async () => {
+        if (S.money < 100) return "It's a pound to enter, my love.";
+        pay(100); setToday('quiz', 1); await pubQuiz(); return 'Same time tomorrow?';
+      } });
+      o.push({ label: 'Ask about the name', value: async () => { await talk('Jackie', 'William Cook bred the first Orpington chickens round here in the 1880s. Black ones first, then the Buff. Big, fluffy, golden birds. People went mad for them.', 'Now there are Orpington hens all over the world, and every one of them is named after a town most people only know from the train announcements.'); return 'Anything else?'; } });
+      return o;
+    });
+  },
+  async walnuts(b) {
+    if (!isOpen('walnuts')) return closedSign(b);
+    stamp('walnuts');
+    await shopLoop('The Walnuts', 'The doors swish open. Inside: a leisure centre, a supermarket, a toy shop and a phone shop where nobody has ever bought a phone.', () => [
+      { label: 'Go for a swim at the leisure centre', note: fmt(450), value: async () => {
+        if (S.money < 450) return "Swimming's £4.50. You haven't got it."; if (S.energy < 15) return "You're too tired to swim. Eat something first.";
+        pay(450); addFun(14); addEnergy(-12); advance(60); await talk(null, 'You do eleven lengths, one of them very fast, and spend ten minutes in the shallow end watching a toddler beat you at floating.'); return 'You feel great. Damp, but great.';
+      } },
+      buy('meal_deal', 350, 'Meal deal. You stand in the aisle for four minutes choosing crisps.'),
+      buy('rubber_chicken', 200, 'The toy shop sells you a rubber chicken. Of course it does.'),
+      { label: 'Browse the phone shop', value: async () => { await talk('Phone shop', 'Have you tried turning it off and on again?', "...I don't have a phone with me.", 'Have you tried turning it off and on again?'); addFun(1); return 'You back out slowly.'; } },
+    ]);
+  },
+  async shed(b) {
+    await talk(null, "Bob's shed. Through the window: three deckchairs, two hundred plant pots, one radio permanently tuned to the cricket.");
+  },
+  async library(b) {
+    if (!isOpen('library')) return closedSign(b);
+    if (S.q.library === 0) {
+      await talk('Mr Okafor', "Welcome to the library. Sorry, I'm a bit distracted. I've just found our oldest overdue book.", '"The Hen Fancier\'s Handbook", 1923 edition. Borrowed in 1987. Never returned.', "It's a piece of local history. If you see it anywhere, please bring it back. No fine. I just want closure.");
+      S.q.library = 1; sfx('quest'); toast('New quest: The overdue book');
+      return;
+    }
+    if (S.q.library === 1 && has('hen_book')) {
+      take('hen_book'); S.q.library = 2; give('library_card'); addFun(10); sfx('quest'); stamp('library');
+      await talk('Mr Okafor', 'Is that... it is! From a charity shop, for a pound? Thirty-nine years overdue and it comes home for a pound.', "Here: a library card, with my thanks. Between you and me, the questions at the Buff Orpington's quiz all come out of our local history section. You'll have a hunch or two.");
+      return;
+    }
+    await shopLoop('Mr Okafor', S.q.library === 1 ? "Any luck with the hen book? Someone told me things get donated by accident all the time." : 'Welcome back. Fancy some local history?', () => [
+      { label: 'Read about Orpington', value: async () => {
+        const facts = ['Orpington was mentioned in the Domesday Book, back in 1086.', 'The first Orpington chickens were bred here by William Cook in the 1880s. The Buff Orpington became the most famous.', 'In 1962 the Liberal candidate Eric Lubbock won the Orpington by-election with a huge swing. The papers invented "Orpington Man" to describe the new suburban voter.', 'The River Cray rises in Priory Gardens and flows north to join the River Darent before it reaches the Thames.', 'Crofton Roman Villa, by the station, was the centre of a farming estate for around 250 years from about AD 140.', 'Charles Darwin lived at Down House in nearby Downe for forty years and wrote On the Origin of Species there.'];
+        advance(20); addFun(2); await talk(null, facts[Math.floor(Math.random() * facts.length)]); return 'Fascinating, isn\'t it?';
+      } },
+    ]);
+  },
+  async priory(b) {
+    if (!isOpen('priory')) { const n = hour() >= 19; return talk(null, 'The Priory is locked up for the night.' + (n ? ' Was that a face at the upstairs window?\n...No. Just a pigeon. Probably.' : ' Open from 10:00.')); }
+    await shopLoop('Edith', "Welcome to the Priory! Parts of this house are over seven hundred years old. Mind the step, it's older than both of us.", () => [
+      { label: "Take Edith's tour", note: '30 min', value: async () => {
+        advance(30); addFun(6); stamp('priory');
+        await talk('Edith', 'This was a medieval house, owned for centuries by the Priory of St John of Jerusalem. That bit of wall? Thirteenth century.', 'Later it was a family home, then council offices, then a museum. Now it mostly belongs to people like me who like old buildings and talking.', 'And out the back, in the gardens, is where the River Cray begins. Little springs bubble up and off it goes, all the way to the Thames.');
+        return 'That concludes the tour. Gift shop is a biscuit tin by the door.';
+      } },
+      { label: 'Ask about the ghost', value: async () => { await talk('Edith', "Ghost? Oh, there's no ghost.", '...', "Don't go upstairs after five, though."); addFun(1); return 'Anything else?'; } },
+    ]);
+  },
+  async house(b) {
+    if (b.idx === 0) return home();
+    const pr = today('paper');
+    if (pr && pr.state === 1 && pr.todo.includes(b.idx)) {
+      pr.todo = pr.todo.filter(h => h !== b.idx); take('newspaper'); sfx('door');
+      toast('Paper delivered to No. ' + (b.idx + 1) + (pr.todo.length ? ' (' + pr.todo.length + ' left)' : '. Back to Raj!'));
+      if (!pr.todo.length) return talk(null, 'That was the last one. Back to Raj\'s News for your pay.');
+      return;
+    }
+    const LINES = ['', 'Nobody answers. A wind chime somewhere is having the time of its life.', 'A dog barks from inside, then thinks better of it.', 'Through the window you see someone doing a 3,000-piece jigsaw of a cat. They are on piece four.', 'A note on the door says: GONE TO THE WALNUTS. BACK WHEN I FIND A PARKING SPACE.', 'Someone inside is practising the trumpet. You decide not to interrupt.', 'An elderly man opens the door, says "Not today, thank you," and closes it again. You hadn\'t said anything.', 'A sticker in the window says: THIS HOUSEHOLD BELIEVES ORPINGTON IS IN KENT.'];
+    await talk(null, LINES[b.idx]);
+  },
+};
+async function home() {
+  const opts = [
+    { label: 'Sleep until morning', value: 'sleep' },
+    { label: today('cuppa') ? 'Cup of tea (had one)' : 'Make a cup of tea', disabled: !!today('cuppa'), value: 'tea' },
+    { label: 'Wardrobe', value: 'wardrobe' },
+    { label: 'Head back out', value: null },
+  ];
+  const pick = await choose('Home', "Home sweet home. The kettle's on the side and the bed is unmade.", opts);
+  if (pick === 'sleep') {
+    if (hour() < 17) { const sure = await choose('Home', "It's only " + hhmm(hour()) + ". Sleep anyway and skip to tomorrow?", [{ label: 'Yes, nap till morning', value: true }, { label: 'No, there\'s more to do', value: null }]); if (!sure) return; }
+    await sleepNow('You flop into bed and sleep like a log.');
+  } else if (pick === 'tea') { setToday('cuppa', 1); addEnergy(12); addFun(1); advance(15); await talk(null, 'You make a proper cup of tea. Bag in, bag out, splash of milk. Bliss.'); }
+  else if (pick === 'wardrobe') openBag('hats');
+}
+async function sleepNow(msg) {
+  newDay(); sfx('quest');
+  await talk(null, msg, 'Day ' + S.day + '. 08:00. The birds are up, and so are you. Daily jobs and shops have reset.');
+}
+
+// ---------- NPC conversations ----------
+const CHAT = {
+  gary: ['The 8:04 to Charing Cross was eight minutes late today. Over a year that adds up to more time than I spent at university.', "Fun fact: from here you can be at London Bridge in under twenty minutes. Fun fact two: I never am.", "Doreen keeps telling me Orpington's in Kent. It's been the London Borough of Bromley since 1965. I've shown her the map. She's shown me her envelopes."],
+  doreen: ['Orpington is in KENT. It says so on my envelopes and my envelopes have never lied to me.', "Ooh, have you been to the Buff Orpington? Jackie does a quiz. I came second in 1998 and I haven't let it go.", 'They named a chicken after us, you know. Not many towns can say that. Croydon certainly can\'t.'],
+  priya: ["I'm doing a school project on Crofton Roman Villa. The Romans had underfloor heating! My house doesn't even have underfloor heating.", 'Mum says if I finish my project we can get chips from the Golden Cod. I have finished my project. Twice.', 'Did you know there are ducks in Priory Gardens? They LOVE bread from Crumbs. Don\'t tell my mum I told you.'],
+  tom: ['Morning! Third lap of Priory Gardens. The ducks are faster than me.', 'If you see a big golden hen, that\'s Mavis\'s. She legs it about once a week.', 'Runner\'s tip: the High Street is flat. Everything else in Bromley is a hill.'],
+  reg: ['In 1962 this town elected a Liberal, Eric Lubbock, at a by-election, and the whole country went potty. The papers invented "Orpington Man".', "That was me, Orpington Man. Well. I was eleven. But I felt very represented.", "I've sat on this bench since 1994. The bench was new then. So was I. Relatively.", 'They\'ll tell you the Walnuts is a shopping centre. It\'s more of a weather shelter with shops in it.'],
+};
+const TALK = {
+  async dev(n) {
+    if (S.q.busker === 0) {
+      await talk('Dev', "Alright! Normally I'd be serenading the morning commuters, but I've snapped my top E string.", "Strings 'n' Things on the High Street sells them. Bring me one and I'll make it worth your while.");
+      S.q.busker = 1; sfx('quest'); toast('New quest: A string for Dev'); return;
+    }
+    if (S.q.busker === 1) {
+      if (!has('guitar_string')) return talk('Dev', "Strings 'n' Things. East side of the High Street. Top E, the thin one.");
+      take('guitar_string'); S.q.busker = 2; give('harmonica'); earn(500); addFun(8); sfx('quest');
+      return talk('Dev', 'Legend! Here, five quid, and take my old harmonica.', 'See the music note painted on the forecourt? That\'s the busking pitch. Stand on it and play when I\'m on a break, which is always. Commuters tip best in the morning.');
+    }
+    const L = ['Busking tip: smile, keep the rhythm, and never play the theme from Titanic. People throw things.', 'Three sets a day, max. Your lips will thank you.', 'I once made £40 in an hour when the trains were cancelled. Captive audience.'];
+    return talk('Dev', L[n.ci++ % L.length]);
+  },
+  async tessa(n) {
+    if (!S.flags.metTessa) { S.flags.metTessa = 1; stamp('villa'); await talk('Tessa', 'Hello! Welcome to Crofton Roman Villa, one of the only Roman villas in London you can actually visit. Here, let me stamp that passport.'); }
+    if (S.q.villa === 1 && S.tess.length >= 3) {
+      S.q.villa = 2; take('tessera', 3); earn(1000); give('roman_helmet'); addFun(12); sfx('quest');
+      return talk('Tessa', 'All three tesserae! You absolute star. Here: £10 from the Friends of the Villa tin, and a Roman helmet from the gift shop. Wear it with pride. Or at least with a chin strap.');
+    }
+    await shopLoop('Tessa', S.q.villa === 1 ? 'Any luck finding those tesserae? ' + S.tess.length + ' of 3 so far. Look for something glinting on the ground around town.' : 'What can I tell you?', () => {
+      const o = [{ label: 'Tell me about the villa', value: async () => { addFun(2); await talk('Tessa', 'People farmed this land from around AD 140 for about 250 years. This house was the heart of the estate.', "You can still see the hypocaust: the Romans' underfloor heating. Hot air from a furnace ran under the floors. Very civilised.", "The rest of the villa is under the road and the station. So technically every commuter is a trespasser on a Roman farm."); return 'Anything else?'; } }];
+      if (S.q.villa === 0) o.push({ label: 'Can I help with anything?', value: async () => { S.q.villa = 1; refreshTesserae(); sfx('quest'); toast('New quest: Lost tesserae'); await talk('Tessa', 'Funny you should ask. Three tesserae, little mosaic tiles, went missing from our handling box. I think a school group took them home in their pockets and dropped them.', 'If you spot something glinting on the ground around town, that could be one. Bring me all three.'); return 'Thank you!'; } });
+      o.push(buy('villa_postcard', 100, 'A postcard. Every penny goes to keeping the roof on.'));
+      return o;
+    });
+  },
+  async mavis(n) {
+    if (S.q.hen === 0) {
+      await talk('Mavis', "Oh, thank goodness, a kind face. My Henrietta's done a runner again!", "She's a Buff Orpington. Big golden girl. William Cook bred the first Orpingtons just up the road, you know. She's very proud of it.", 'Someone saw her heading for the allotments. She\'s a devil to catch, but she can\'t say no to chicken feed. The pet shop sells it.');
+      S.q.hen = 1; syncHen(); hen.x = 47; hen.y = 6; hen.mv = null; sfx('quest'); toast('New quest: Henrietta on the run'); return;
+    }
+    if (S.q.hen === 1) return talk('Mavis', 'Any sign of her? Try the allotments, or wherever there are worms. Chicken feed from Feathers & Paws helps.');
+    if (S.q.hen === 2) {
+      S.q.hen = 3; syncHen(); earn(1500); give('egg', 2); addFun(15); sfx('quest');
+      return talk('Mavis', 'HENRIETTA! You wicked, wonderful bird. Into the coop with you.', 'Thank you, dear. Here, £15 and two of her eggs, fresh this morning. Well, fresh from wherever she was this morning.');
+    }
+    if (!today('egg')) { setToday('egg', 1); give('egg'); return talk('Mavis', "Henrietta's laid again. Take an egg, dear, I insist."); }
+    return talk('Mavis', ["Henrietta's sulking in the coop. She preferred life on the run.", 'Did you know Orpingtons come in black, blue, white and buff? Buff is best. Don\'t tell the others.'][n.ci++ % 2]);
+  },
+  async bob(n) {
+    const w = today('weeds');
+    if (!today('weedJob')) {
+      const pick = await choose('Bob', "Morning! Knees aren't what they were. Pull six weeds out of my plots and I'll give you six quid and a stick of rhubarb. Deal?", [{ label: 'Deal', value: true }, { label: 'Not right now', value: null }]);
+      if (!pick) return talk('Bob', "Fair enough. They're not going anywhere. That's the problem with weeds.");
+      const soil = []; for (let y = 4; y <= 8; y++) for (let x = 40; x <= 57; x++) if (get(x, y) === SOIL) soil.push([x, y]);
+      const chosen = shuffle(soil).slice(0, 6); setToday('weedJob', 1); setToday('weeds', chosen); weeds = chosen.slice();
+      return talk('Bob', 'Lovely. Stand by a weed and press the action button to pull it. Mind my courgettes.');
+    }
+    if (today('weedJob') === 1 && !weeds.length) {
+      setToday('weedJob', 2); earn(600); give('rhubarb'); addFun(4); stamp('allotments');
+      return talk('Bob', 'Spotless! Here\'s six quid and some rhubarb. Same time tomorrow?');
+    }
+    if (today('weedJob') === 1) return talk('Bob', weeds.length + ' weeds left. The ones with the little yellow flowers. Not the courgettes.');
+    return talk('Bob', ['Did you know the River Cray starts in Priory Gardens? Lovely water. My tomatoes are jealous.', 'Come back tomorrow, there\'ll be more weeds. There are always more weeds.'][n.ci++ % 2]);
+  },
+};
+async function talkTo(n) {
+  if (!n.still) n.pause = 4;
+  n.dir = dirTo(player.x - n.x, player.y - n.y);
+  if (TALK[n.id]) return TALK[n.id](n);
+  const L = CHAT[n.id]; await talk(n.name, L[n.ci++ % L.length]); addFun(n.ci <= L.length ? 1 : 0);
+}
+
+// ---------- props interactions ----------
+async function useProp(p) {
+  switch (p.type) {
+    case 'bench': advance(15); addEnergy(6); return talk(null, 'You sit on the bench for a bit and watch Orpington go by. A pigeon eyes your pockets.');
+    case 'busstop': {
+      const pick = await choose('Bus stop', 'The timetable lists the R buses that loop round the town and out into the villages. One goes to Downe, home of Charles Darwin.', [
+        { label: 'Trip to Down House', note: fmt(1200), value: 'downe' }, { label: 'Wait for a bus for fun', value: 'wait' }, { label: 'Leave', value: null }]);
+      if (pick === 'downe') {
+        if (hour() >= 15) return talk(null, 'Down House will be closed by the time you get there. Go in the morning.');
+        if (S.money < 1200) return talk(null, "Bus fare and entry come to £12. You haven't got enough.");
+        pay(1200); advance(4 * 60); addEnergy(-15); addFun(20); give('darwin_postcard'); stamp('downe');
+        return talk(null, 'The bus winds out of town through narrow lanes to the village of Downe.', "At Down House you see Darwin's study, where he wrote On the Origin of Species, and walk the Sandwalk, the gravel path where he did his thinking.", 'You think too. Mostly about lunch. You buy a postcard and catch the bus back.');
+      }
+      if (pick === 'wait') { advance(20); return talk(null, 'You wait twenty minutes. Three buses arrive at once. None of them is yours. Classic.'); }
+      return;
+    }
+    case 'phonebox': addFun(1); return talk(null, "A classic red phone box. Inside there's no phone, just a little library of paperbacks and a strong smell of 1994.");
+    case 'postbox': return talk(null, 'A red pillar box. Last collection: 17:30. Someone has knitted it a little hat.');
+    case 'board': return talk('Notice board', 'ORPINGTON PASSPORT\nCollect all ten stamps to become an Honorary Orpingtonian! Open your Journal (J) to see where to find them.', 'Also on the board: LOST HEN (golden, bossy, answers to Henrietta), a choir looking for tenors, and a card offering "Ironing. Reasonable rates. No shirts."');
+    case 'pitch': return busk();
+    case 'van': {
+      if (!isOpen('van')) return talk(null, 'The ice cream van is shut. A sign says: BACK AT 11. NO, I WON\'T PLAY THE TUNE.');
+      return shopLoop('Sal', "What'll it be? The 99 is the only correct answer.", () => [buy('ninety_nine', 250), buy('lolly', 150)]);
+    }
+    case 'coop': return talk(null, S.q.hen === 3 ? 'Henrietta glares at you from the coop. You are no longer friends.' : 'An empty hen coop. A little painted sign over the door says HENRIETTA.');
+    case 'sign': return talk(null, 'BR6 ALLOTMENT SOCIETY. Members only. Please close the gate. Please do not feed the courgettes.');
+  }
+}
+function pondTarget() { const [dx, dy] = DIRS[player.dir], fx = player.x + dx, fy = player.y + dy; return get(fx, fy) === WATER && fy >= 43 ? [fx, fy] : null; }
+async function feedDucks() {
+  take('bread'); addFun(8); duckFeed = 8; sfx('quack'); stamp('ducks');
+  await talk(null, 'You tear up the bread and toss it in. The ducks arrive like a squadron. One of them looks you dead in the eye and quacks something rude.');
+}
+
+// ---------- busking minigame ----------
+const miniEl = $('#mini'), mZone = $('#mZone'), mMark = $('#mMark'), mMsg = $('#mMsg'), mScore = $('#mScore');
+async function busk() {
+  const inst = has('harmonica') ? 'harmonica' : has('kazoo') ? 'kazoo' : null;
+  if (!inst) return talk(null, 'A busking pitch. You need an instrument. Dev might lend you one, or Strings \'n\' Things sells kazoos.');
+  if ((today('busk') || 0) >= 3) return talk(null, "You've busked three times today. Your lips have formally resigned.");
+  if (S.energy < 8) return talk(null, "You're too tired to busk. Eat something first.");
+  const go = await choose(null, 'Busk with your ' + ITEMS[inst].name.toLowerCase() + '? It takes about 40 minutes.', [{ label: 'Play a set', value: true }, { label: 'Not now', value: null }]);
+  if (!go) return;
+  setToday('busk', (today('busk') || 0) + 1);
+  return new Promise(res => {
+    const m = { type: 'mini', round: 0, hits: 0, pos: 0, vel: 0.9, zone: [0.4, 0.2], res, wait: 0 };
+    openUI(m); miniEl.hidden = false; mMsg.textContent = 'Press Space, A, or Play when the marker is in the green. Six notes.'; newZone(m);
+    m.hit = () => {
+      if (m.wait > 0) return;
+      const ok = m.pos >= m.zone[0] && m.pos <= m.zone[0] + m.zone[1];
+      if (ok) { m.hits++; tone(NOTES[m.round % NOTES.length], 0.25, inst === 'kazoo' ? 'sawtooth' : 'square', 0.05); mMsg.textContent = ['Lovely!', 'A commuter nods.', 'Someone films you.', 'A dog howls along.', 'Perfect.', 'Ooh, soulful.'][m.round]; }
+      else { sfx('miss'); mMsg.textContent = ['A pigeon winces.', 'Bum note.', 'A child covers their ears.', 'Close!'][m.round % 4]; }
+      m.round++; m.wait = 0.45; m.vel *= 1.12;
+      mScore.textContent = 'Notes ' + m.hits + '/6 · Tips ' + fmt(m.hits * 60);
+      if (m.round >= 6) setTimeout(() => finishBusk(m), 500); else newZone(m);
+    };
+    mScore.textContent = 'Notes 0/6 · Tips £0.00';
+  });
+}
+function newZone(m) { const w = 0.22 - m.round * 0.02; m.zone = [0.05 + Math.random() * (0.9 - w), w]; mZone.style.left = (m.zone[0] * 100) + '%'; mZone.style.width = (w * 100) + '%'; }
+async function finishBusk(m) {
+  miniEl.hidden = true;
+  const tips = m.hits * 60 + (m.hits === 6 ? 200 : 0) + (hour() < 10 ? 50 : 0) + Math.floor(Math.random() * 40);
+  advance(40); addEnergy(-8); addFun(3 + m.hits);
+  ui = null; if (tips > 0) earn(tips);
+  const res = m.res;
+  await talk(null, m.hits === 6 ? 'A flawless set! A small crowd claps and the hat fills up: ' + fmt(tips) + '.' : m.hits >= 3 ? 'Not bad at all. You count ' + fmt(tips) + ' in the hat.' : 'Rough set. Someone drops ' + fmt(tips) + ' in the hat, mostly out of pity.');
+  res();
+}
+$('#mPlay').addEventListener('click', () => ui && ui.type === 'mini' && ui.hit());
+
+// ---------- interaction ----------
+function facing() {
+  const [dx, dy] = DIRS[player.dir], fx = player.x + dx, fy = player.y + dy;
+  const n = npcAt(fx, fy); if (n) return { kind: 'npc', n, label: 'Talk to ' + n.name };
+  if (hen.active && !hen.follow && hen.x === fx && hen.y === fy) return { kind: 'hen', label: 'Catch Henrietta' };
+  const d = doorAt(fx, fy); if (d) return { kind: 'door', b: d, label: d.house ? (d.idx === 0 ? 'Go home' : 'Knock at ' + d.name) : 'Go into ' + d.name };
+  const wi = weeds.findIndex(w => (w[0] === fx && w[1] === fy) || (w[0] === player.x && w[1] === player.y)); if (wi >= 0) return { kind: 'weed', wi, label: 'Pull the weed' };
+  const p = propAt(fx, fy); if (p && p.label) return { kind: 'prop', p, label: p.label };
+  const here = propAt(player.x, player.y); if (here && here.label) return { kind: 'prop', p: here, label: here.label };
+  if (pondTarget()) return has('bread') ? { kind: 'ducks', label: 'Feed the ducks' } : { kind: 'pond', label: 'Look at the ducks' };
+  return null;
+}
+async function interact() {
+  if (ui || titleOpen || player.mv) return;
+  const f = facing(); if (!f) return;
+  switch (f.kind) {
+    case 'npc': return talkTo(f.n);
+    case 'hen': return catchHen();
+    case 'door': return enter(f.b);
+    case 'weed': weeds.splice(f.wi, 1); setToday('weeds', weeds.slice()); addEnergy(-2); advance(5); sfx('blip'); toast(weeds.length ? 'Weed pulled. ' + weeds.length + ' to go.' : 'Last weed! Tell Bob.'); return;
+    case 'prop': return useProp(f.p);
+    case 'ducks': return feedDucks();
+    case 'pond': sfx('quack'); return talk(null, 'The ducks paddle over hopefully, see you have no bread, and paddle away with visible contempt. Crumbs Bakery sells loaves.');
+  }
+}
+async function enter(b) {
+  sfx('door');
+  if (b.house) return ENTER.house(b);
+  return ENTER[b.id](b);
+}
+async function catchHen() {
+  if (feedUntil > S.min || Math.random() < 0.33) { S.q.hen = 2; syncHen(); sfx('cluck'); addFun(5); return talk(null, 'You scoop up Henrietta! She protests loudly, then settles down. She\'ll follow you now. Take her back to Mavis in Priory Gardens.'); }
+  sfx('cluck'); henFlee(3); toast('Henrietta flaps out of reach!');
+}
+
+// ---------- bag & journal panels ----------
+const panel = $('#panel'), pBody = $('#pBody'), pTitle = $('#pTitle'), pTabs = $('#pTabs');
+let panelMode = 'bag', bagTab = 'all';
+function openPanel(mode) { if (titleOpen) return; if (ui && ui.type !== 'panel') return; panelMode = mode; openUI({ type: 'panel' }); panel.hidden = false; renderPanel(); $('#pClose').focus({ preventScroll: true }); }
+function closePanel() { panel.hidden = true; closeUI(); }
+function openBag(tab) { bagTab = tab || 'all'; openPanel('bag'); }
+$('#pClose').addEventListener('click', closePanel);
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function row(title, desc, btns, tag) {
+  const r = el('div', 'row'), m = el('div', 'meta'); m.appendChild(el('b', null, title)); if (desc) m.appendChild(el('p', null, desc)); r.appendChild(m);
+  if (tag) r.appendChild(el('span', 'tag ' + (tag[1] || ''), tag[0]));
+  (btns || []).forEach(([label, fn, off]) => { const b = el('button', off ? 'off' : '', label); b.type = 'button'; b.addEventListener('click', fn); r.appendChild(b); });
+  return r;
+}
+function renderPanel() {
+  pBody.innerHTML = ''; pTabs.innerHTML = '';
+  if (panelMode === 'bag') {
+    pTitle.textContent = 'Bag';
+    const groups = [['food', 'Food and drink'], ['hat', 'Hats'], ['tool', 'Useful things'], ['quest', 'Quest items'], ['key', 'Keepsakes'], ['souvenir', 'Souvenirs']];
+    const ids = Object.keys(S.inv).filter(id => S.inv[id] > 0);
+    const sec = el('div'); const hs = el('div', 'rows');
+    sec.appendChild(el('h3', null, 'Looking good')); sec.appendChild(hs);
+    hs.appendChild(row('Wearing: ' + (S.hat ? ITEMS[S.hat].name : 'no hat'), 'Hair by Kostas, ' + (S.style === 'bald' ? 'the full shave' : S.style) + '.', S.hat ? [['Take off', () => { give(S.hat); S.hat = null; renderPanel(); }]] : []));
+    pBody.appendChild(sec);
+    if (!ids.length) pBody.appendChild(el('p', 'empty', 'Your bag is empty. The High Street is full of things to buy.'));
+    for (const [kind, label] of groups) {
+      const list = ids.filter(id => ITEMS[id].kind === kind);
+      if (!list.length || (bagTab === 'hats' && kind !== 'hat')) continue;
+      const s = el('div'); s.appendChild(el('h3', null, label)); const rs = el('div', 'rows'); s.appendChild(rs);
+      for (const id of list) {
+        const it = ITEMS[id], n = S.inv[id], btns = [];
+        if (kind === 'food') btns.push(['Eat', () => { eatNow(id); toast('You eat the ' + it.name.toLowerCase() + '. +' + it.en + ' energy'); renderPanel(); }]);
+        if (kind === 'hat') btns.push(['Wear', () => { if (S.hat) give(S.hat); take(id); S.hat = id; sfx('blip'); renderPanel(); }]);
+        if (id === 'chicken_feed') btns.push(['Rattle', () => { useFeed(); renderPanel(); }]);
+        if (id === 'rubber_chicken') btns.push(['Squeeze', () => { sfx('squeak'); if (!today('squeak')) { setToday('squeak', 1); addFun(2); } toast('SQUEEEAK.'); }]);
+        const extra = kind === 'food' ? ' +' + it.en + ' energy' + (it.fun ? ', +' + it.fun + ' fun' : '') : '';
+        rs.appendChild(row(it.name + (n > 1 ? ' ×' + n : ''), it.desc + extra, btns));
+      }
+      pBody.appendChild(s);
+    }
+  } else if (panelMode === 'journal') {
+    pTitle.textContent = 'Journal';
+    const qs = el('div'); qs.appendChild(el('h3', null, 'Quests')); const qr = el('div', 'rows'); qs.appendChild(qr);
+    const Q = [
+      ['Henrietta on the run', ['A worried lady by the pond in Priory Gardens might need help.', 'Catch Mavis\'s hen. Last seen near the allotments. Chicken feed from Feathers & Paws helps.', 'Henrietta is following you. Take her back to Mavis in Priory Gardens.', 'Henrietta is home. Mavis gives you an egg each day.'], S.q.hen],
+      ['A string for Dev', ['Dev busks outside the station. Say hello.', "Buy a top E guitar string at Strings 'n' Things and take it to Dev.", '', 'Done. Busk on the painted note outside the station (up to 3 sets a day).'], S.q.busker === 2 ? 3 : S.q.busker],
+      ['Lost tesserae', ['Tessa at Crofton Roman Villa may need a hand.', 'Find 3 glinting mosaic tiles around town (' + S.tess.length + '/3) and bring them to Tessa.', '', 'Done. You have a Roman helmet.'], S.q.villa === 2 ? 3 : S.q.villa],
+      ['The overdue book', ['The library in Priory Gardens has a problem.', "Find The Hen Fancier's Handbook. Donated books end up in charity shops.", '', 'Done. You have a library card.'], S.q.library === 2 ? 3 : S.q.library],
+    ];
+    for (const [t, d, s] of Q) qr.appendChild(row(t, d[s], [], s === 0 ? ['Rumour', ''] : s === 3 ? ['Done', 'done'] : ['Active', 'act']));
+    pBody.appendChild(qs);
+    const ds = el('div'); ds.appendChild(el('h3', null, 'Today\'s odd jobs')); const dr = el('div', 'rows'); ds.appendChild(dr);
+    const pr = today('paper'), wj = today('weedJob');
+    dr.appendChild(row("Paper round for Raj's News", !pr ? 'Ask Raj. Pays £8.' : pr.state === 2 ? 'Paid. Back tomorrow.' : pr.todo.length ? 'Deliver to Cook Close: ' + pr.todo.map(h => 'No. ' + (h + 1)).join(', ') : 'All delivered. Collect your £8 from Raj.', [], pr && pr.state === 2 ? ['Done', 'done'] : pr ? ['Active', 'act'] : null));
+    dr.appendChild(row("Weeding for Bob", !wj ? 'Ask Bob at the allotments. Pays £6.' : wj === 2 ? 'Paid. Back tomorrow.' : weeds.length ? weeds.length + ' weeds left in the plots.' : 'All pulled. Tell Bob.', [], wj === 2 ? ['Done', 'done'] : wj ? ['Active', 'act'] : null));
+    dr.appendChild(row('Busking', (today('busk') || 0) + ' of 3 sets played today. Needs an instrument.', []));
+    dr.appendChild(row('Pub quiz', today('quiz') ? 'Played today.' : 'The Buff Orpington, £1 entry, from 11:00.', []));
+    pBody.appendChild(ds);
+    const ps = el('div'); ps.appendChild(el('h3', null, 'Orpington Passport · ' + Object.keys(S.stamps).length + ' of 10')); const grid = el('div', 'stamps'); ps.appendChild(grid);
+    for (const [id, name, hint] of STAMPS) { const g = el('div', 'stamp' + (S.stamps[id] ? ' got' : '')); g.appendChild(el('b', null, name)); g.appendChild(el('span', S.stamps[id] ? 'ink' : '', S.stamps[id] ? 'Stamped, day ' + S.stamps[id] : hint)); grid.appendChild(g); }
+    pBody.appendChild(ps);
+    const ss = el('div'); ss.appendChild(el('h3', null, 'Your day out')); const sg = el('div', 'stats'); ss.appendChild(sg);
+    [['Day', S.day], ['Steps walked', S.stats.steps.toLocaleString()], ['Money earned', fmt(S.stats.earned)], ['Money spent', fmt(S.stats.spent)], ['Things eaten', S.stats.eaten], ['Fun', S.fun]].forEach(([k, v]) => { const d = el('div'); d.appendChild(el('b', null, String(v))); d.appendChild(document.createTextNode(k)); sg.appendChild(d); });
+    pBody.appendChild(ss);
+    const hs = el('div'); hs.appendChild(el('h3', null, 'Controls')); hs.appendChild(el('p', 'empty', 'Arrow keys or WASD to walk. Space, E or Enter to talk, shop, open doors and pull weeds. B opens your bag, J this journal, M toggles sound. Shops shut in the evening; sleep at home to start a new day.'));
+    const nb = el('button', null, 'Start a new game'); nb.type = 'button'; nb.style.cssText = 'margin-top:8px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:5px 10px';
+    nb.addEventListener('click', () => { if (nb.dataset.sure) { closePanel(); startNew(); } else { nb.dataset.sure = 1; nb.textContent = 'Click again to wipe your save and restart'; } });
+    hs.appendChild(nb); pBody.appendChild(hs);
+  }
+  hudUpdate();
+}
+function useFeed() {
+  if (S.q.hen !== 1) { toast(S.q.hen === 0 ? 'No chickens about. Yet.' : 'Henrietta is already safe.'); return; }
+  take('chicken_feed'); feedUntil = S.min + 90; sfx('cluck'); toast('You rattle the bag. Somewhere, a hen pricks up her ears.');
+}
+function showCert() {
+  openPanel('cert');
+  pTitle.textContent = 'Passport complete';
+  pBody.innerHTML = '';
+  const c = el('div', 'card cert'); c.style.cssText = 'max-width:520px;align-self:center;box-shadow:none';
+  c.appendChild(el('div', 'eyebrow', 'Certificate of the BR6 Passport'));
+  c.appendChild(el('h1', null, 'Honorary Orpingtonian'));
+  c.appendChild(el('p', null, 'All ten stamps, collected on day ' + S.day + '. You have walked ' + S.stats.steps.toLocaleString() + ' steps, earned ' + fmt(S.stats.earned) + ', spent ' + fmt(S.stats.spent) + ' and had ' + S.fun + ' units of fun. William Cook would be proud. So would his chickens.'));
+  c.appendChild(el('p', 'keys', 'The town is still yours to wander. Keep going as long as you like.'));
+  pBody.appendChild(c); sfx('quest'); addFun(20);
+}
+
+// ---------- HUD ----------
+const hMoney = $('#hMoney'), hEnergy = $('#hEnergy'), hBar = $('#hBar'), hFun = $('#hFun'), hClock = $('#hClock'), hStamps = $('#hStamps'), hintEl = $('#hint');
+let lastHud = '';
+function hudUpdate() {
+  if (!S) return;
+  const k = [S.money, Math.round(S.energy), S.fun, S.day, Math.floor(S.min / 5), Object.keys(S.stamps).length].join();
+  if (k === lastHud) return; lastHud = k;
+  hMoney.textContent = fmt(S.money); hEnergy.style.width = Math.round(S.energy) + '%'; hBar.classList.toggle('low', S.energy < 20);
+  hFun.textContent = S.fun; hClock.textContent = 'Day ' + S.day + ' · ' + hhmm(Math.floor(S.min / 5) * 5 / 60); hStamps.textContent = Object.keys(S.stamps).length + '/10';
+}
+let lastHint = '';
+function hintUpdate() {
+  let t = '';
+  if (!ui && !titleOpen && !player.mv) { const f = facing(); if (f) t = f.label; }
+  if (t === lastHint) return; lastHint = t; hintEl.hidden = !t;
+  if (t) { hintEl.innerHTML = ''; const k = el('kbd', null, isTouch ? 'A' : 'Space'); hintEl.appendChild(k); hintEl.appendChild(document.createTextNode(' ' + t)); }
+}
+
+// ---------- save / load ----------
+const KEY = 'orpington-day-out-v1';
+function serialize() { if (!S) return null; S.px = player.x; S.py = player.y; S.dir = player.dir; S.hen = { x: hen.x, y: hen.y }; return JSON.stringify(S); }
+function save() { if (!S || titleOpen) return; try { localStorage.setItem(KEY, serialize()); } catch (e) {} }
+function loadSaved() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function applyState(s) {
+  S = Object.assign(newState(), s);
+  syncHen(); placePlayer();
+  if (S.hen && hen.active && !hen.follow) { hen.x = S.hen.x; hen.y = S.hen.y; hen.mv = null; }
+  setupDay(); lastHud = ''; hudUpdate();
+}
+
+// ---------- update ----------
+let tGame = 0;
+function updatePlayer(dt) {
+  player.speed = S.energy < 15 ? 3.2 : 5.2;
+  if (stepMove(player, dt)) arrive();
+  if (!player.mv && !ui && !titleOpen) {
+    const d = heldDirs[heldDirs.length - 1];
+    if (d) {
+      player.dir = d;
+      const [dx, dy] = DIRS[d], nx = player.x + dx, ny = player.y + dy;
+      const door = doorAt(nx, ny);
+      if (door) { if (performance.now() > bumpLock) { bumpLock = performance.now() + 600; enter(door); } return; }
+      if (passable(nx, ny, 'player')) {
+        const ox = player.x, oy = player.y; startMove(player, nx, ny); S.stats.steps++;
+        if (hen.follow) { hen.dir = dirTo(ox - hen.x, oy - hen.y); hen.speed = player.speed; startMove(hen, ox, oy); }
+      }
+    }
+  }
+}
+function arrive() {
+  const pi = pickups.findIndex(p => p.x === player.x && p.y === player.y);
+  if (pi >= 0) {
+    const p = pickups[pi]; pickups.splice(pi, 1);
+    if (p.kind === 'coin') { S.daily[p.id] = 1; earn(p.value); toast('Found ' + fmt(p.value) + ' on the ground!'); }
+    else { S.tess.push(p.id); give('tessera'); sfx('quest'); toast('Found a Roman tessera! (' + S.tess.length + '/3)', true); }
+  }
+  const z = zoneOf(player.x, player.y);
+  if (z !== zoneName) { zoneName = z; zoneEl.textContent = z; zoneEl.hidden = false; zoneEl.style.opacity = 1; zoneTimer = 2.2; }
+}
+function updateNpcs(dt) {
+  for (const n of npcs) {
+    stepMove(n, dt);
+    if (n.still || n.mv || ui) continue;
+    if (n.pause > 0) { n.pause -= dt; continue; }
+    n.wait -= dt; if (n.wait > 0) continue;
+    n.wait = 0.8 + Math.random() * 2.5;
+    const d = ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)], [dx, dy] = DIRS[d];
+    const nx = n.x + dx, ny = n.y + dy, [bx, by, bw, bh] = n.bounds;
+    n.dir = d;
+    if (nx >= bx && ny >= by && nx < bx + bw && ny < by + bh && passable(nx, ny, n) && !doorAt(nx, ny)) startMove(n, nx, ny);
+  }
+}
+function henFlee(steps) {
+  for (let s = 0; s < steps; s++) {
+    let best = null, bd = -1;
+    for (const d of shuffle(['up', 'down', 'left', 'right'])) { const [dx, dy] = DIRS[d], nx = hen.x + dx, ny = hen.y + dy; if (!passable(nx, ny, hen) || doorAt(nx, ny)) continue; const dist = Math.abs(nx - player.x) + Math.abs(ny - player.y); if (dist > bd) { bd = dist; best = [nx, ny, d]; } }
+    if (best) { hen.x = best[0]; hen.y = best[1]; hen.dir = best[2] === 'left' ? 'left' : 'right'; }
+  }
+  hen.mv = null;
+}
+function updateHen(dt) {
+  if (!hen.active) return;
+  if (hen.follow) { stepMove(hen, dt); return; }
+  stepMove(hen, dt);
+  if (hen.mv || ui) return;
+  hen.wait -= dt; if (hen.wait > 0) return;
+  const dist = Math.abs(hen.x - player.x) + Math.abs(hen.y - player.y), fed = feedUntil > S.min;
+  hen.speed = 4.5; hen.wait = fed ? 0.25 : dist <= 2 ? 0.45 : 0.6 + Math.random() * 1.6;
+  let opts = ['up', 'down', 'left', 'right'].map(d => { const [dx, dy] = DIRS[d]; return [hen.x + dx, hen.y + dy, d]; }).filter(([x, y]) => passable(x, y, hen) && !doorAt(x, y));
+  if (!opts.length) return;
+  let pick;
+  if (fed) {
+    if (dist <= 1) { S.q.hen = 2; syncHen(); sfx('cluck'); toast('Henrietta pecks at the feed. Got her!', true); addFun(5); return; }
+    opts.sort((a, b) => (Math.abs(a[0] - player.x) + Math.abs(a[1] - player.y)) - (Math.abs(b[0] - player.x) + Math.abs(b[1] - player.y))); pick = opts[0];
+  } else if (dist <= 2) { opts.sort((a, b) => (Math.abs(b[0] - player.x) + Math.abs(b[1] - player.y)) - (Math.abs(a[0] - player.x) + Math.abs(a[1] - player.y))); pick = opts[0]; }
+  else pick = opts[Math.floor(Math.random() * opts.length)];
+  if (pick[2] === 'left' || pick[2] === 'right') hen.dir = pick[2];
+  startMove(hen, pick[0], pick[1]);
+  if (Math.random() < 0.08 && dist < 9) sfx('cluck');
+}
+const CAR_COLS = ['#3f7fc4', '#c94c3c', '#e8e4dc', '#2f2f35', '#6aa36f', '#d6b23a', '#8a8f98', '#7a4fa0'];
+function updateCars(dt) {
+  carTimer -= dt; busTimer -= dt;
+  const spawn = (bus) => {
+    const lane = bus ? 11 : (Math.random() < 0.5 ? 10 : 11), len = bus ? 2.8 : 1.6, x = lane === 11 ? -len - 0.5 : W + 0.5;
+    if (cars.some(c => c.lane === lane && Math.abs(c.x - x) < 4)) return false;
+    cars.push({ lane, x, len, v: 3, vmax: bus ? 2.6 : 3 + Math.random() * 1.2, color: CAR_COLS[Math.floor(Math.random() * CAR_COLS.length)], bus, route: 'R' + (1 + Math.floor(Math.random() * 11)), stopT: 0, stopped: false, honk: 0 });
+    return true;
+  };
+  if (carTimer <= 0) { spawn(false); carTimer = 2.5 + Math.random() * 4; }
+  if (busTimer <= 0) { if (spawn(true)) busTimer = 35 + Math.random() * 25; else busTimer = 2; }
+  const pRow = player.y, pFrom = player.mv ? player.mv.fy : player.y, [ppx] = rpos(player), pc = ppx / TS + 0.5;
+  for (const c of cars) {
+    const dir = c.lane === 11 ? 1 : -1, front = dir > 0 ? c.x + c.len : c.x;
+    let stop = false;
+    if (pRow === c.lane || pFrom === c.lane) {
+      const d = dir > 0 ? (pc - 0.5) - front : front - (pc + 0.5);
+      if (d > -0.7 && d < 1.6) { stop = true; c.honk -= dt; if (c.honk <= 0 && get(player.x, player.y) !== ZEBRA && !titleOpen) { c.honk = 3; sfx('honk'); toast(['Beep! Use the zebra crossing!', 'HONK. A driver mouths something.', 'Beep beep! Crofton Road is not a footpath.'][Math.floor(Math.random() * 3)]); addFun(-1); S.fun = Math.max(0, S.fun); } }
+    }
+    for (const o of cars) if (o !== c && o.lane === c.lane) { const d2 = dir > 0 ? o.x - front : front - (o.x + o.len); if (d2 > -0.2 && d2 < 0.5) stop = true; }
+    if (c.bus && !c.stopped && dir > 0 && front >= 39.4) { c.stopT = 3; c.stopped = true; }
+    if (c.stopT > 0) { c.stopT -= dt; stop = true; }
+    c.v = stop ? 0 : Math.min(c.vmax, c.v + dt * 3);
+    c.x += dir * c.v * dt;
+  }
+  cars = cars.filter(c => c.x > -5 && c.x < W + 5);
+}
+function updateTrains(dt) {
+  trainTimer -= dt;
+  if (trainTimer <= 0 && !trains.length) {
+    const dir = Math.random() < 0.5 ? 1 : -1, len = 4 * 3.75;
+    const track = dir > 0 ? 2 : 1;
+    trains.push({ dir, track, x: dir > 0 ? -len - 1 : W + 1, len, v: 7, vmax: 7, stopping: track === 2 && Math.random() < 0.7, wait: 0, done: false });
+    trainTimer = 25 + Math.random() * 25;
+    const dist = Math.abs(player.y - 2); if (dist < 12) sfx('horn');
+  }
+  for (const t of trains) {
+    if (t.stopping && !t.done) {
+      const target = 24.5 - t.len / 2, rem = (target - t.x) * t.dir;
+      if (rem <= 0.02) { t.v = 0; t.wait += dt; if (t.wait > 5) { t.done = true; } }
+      else t.v = Math.min(t.vmax, Math.max(0.6, rem * 0.9));
+    } else t.v = Math.min(t.vmax, t.v + dt * 2.2);
+    t.x += t.dir * t.v * dt;
+  }
+  trains = trains.filter(t => t.x > -t.len - 3 && t.x < W + 3);
+}
+function updateCritters(dt) {
+  if (duckFeed > 0) duckFeed -= dt;
+  const tgt = pondTarget();
+  for (const d of ducks) {
+    if (duckFeed > 0 && tgt) { d.vx += ((tgt[0] * TS + 4) - d.x) * dt * 0.8; d.vy += ((tgt[1] * TS + 4) - d.y) * dt * 0.8; }
+    else if (Math.random() < dt * 0.5) { d.vx = (Math.random() - 0.5) * 10; d.vy = (Math.random() - 0.5) * 5; }
+    const m = Math.hypot(d.vx, d.vy), cap = duckFeed > 0 ? 22 : 8; if (m > cap) { d.vx *= cap / m; d.vy *= cap / m; }
+    const nx = d.x + d.vx * dt, ny = d.y + d.vy * dt;
+    const ok = (x, y) => get(Math.floor(x / TS), Math.floor(y / TS)) === WATER && get(Math.floor((x + 9) / TS), Math.floor((y + 7) / TS)) === WATER;
+    if (ok(nx, d.y)) d.x = nx; else d.vx *= -1;
+    if (ok(d.x, ny)) d.y = ny; else d.vy *= -1;
+  }
+  const [ppx, ppy] = rpos(player);
+  for (const p of pigeons) {
+    if (p.fly) { p.y -= 40 * dt; p.x += p.fly * 30 * dt; p.alpha -= dt * 0.6; if (p.alpha <= 0) { p.respawn = (p.respawn || 0) + dt; } if (p.alpha <= -8) spawnPigeon(p); }
+    else { p.peck -= dt; if (Math.hypot(ppx - p.x, ppy - p.y) < 22) { p.fly = Math.random() < 0.5 ? -1 : 1; } }
+  }
+}
+function update(dt) {
+  tGame += dt;
+  if (!titleOpen && S) {
+    if (!ui) {
+      S.min += dt * (60 / 45); addEnergy(-dt * (60 / 45) / 12);
+      if (S.min >= 23 * 60) { sleepNow("It's 11pm and you can barely keep your eyes open. You trudge home to Cook Close and fall into bed."); }
+      else if (S.energy <= 0) { S.energy = 25; advance(60); talk(null, "You've run out of steam and flop down on the nearest bench for an hour. Eat something soon!"); }
+    }
+    updatePlayer(dt); updateHen(dt); updateNpcs(dt);
+    if (zoneTimer > 0) { zoneTimer -= dt; if (zoneTimer <= 0) zoneEl.style.opacity = 0; }
+    hudUpdate(); hintUpdate();
+  }
+  updateCars(dt); updateTrains(dt); updateCritters(dt);
+  if (ui && ui.type === 'talk' && ui.typing) {
+    const before = Math.floor(ui.shown); ui.shown += dt * 75; const now = Math.floor(ui.shown);
+    if (now >= ui.full.length) { ui.typing = false; dTxt.textContent = ui.full; } else if (now !== before) { dTxt.textContent = ui.full.slice(0, now); if (now % 4 === 0) sfx('blip'); }
+  }
+  if (ui && ui.type === 'mini') {
+    const m = ui; if (m.wait > 0) m.wait -= dt;
+    m.pos += m.vel * dt * (m.dirn || 1); if (m.pos > 1) { m.pos = 1; m.dirn = -1; } if (m.pos < 0) { m.pos = 0; m.dirn = 1; }
+    mMark.style.left = (m.pos * 100) + '%';
+  }
+}
+
+// ---------- render ----------
+function darkness() { if (!S || titleOpen) return 0; const h = hour(); return h < 18 ? 0 : h < 21 ? (h - 18) / 3 * 0.55 : 0.55; }
+function render() {
+  const cw = cv.width, ch = cv.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#0d141d'; ctx.fillRect(0, 0, cw, ch);
+  let cx, cy;
+  if (titleOpen || !S) { cx = 30 * TS + Math.sin(tGame * 0.05) * 60; cy = 20 * TS + Math.cos(tGame * 0.04) * 40; }
+  else { const [x, y] = rpos(player); cx = x + 8; cy = y + 8; }
+  let camX = cx - vw / 2, camY = cy - vh / 2;
+  camX = vw >= W * TS ? (W * TS - vw) / 2 : Math.max(0, Math.min(W * TS - vw, camX));
+  camY = vh >= H * TS ? (H * TS - vh) / 2 : Math.max(0, Math.min(H * TS - vh, camY));
+  camX = Math.round(camX * zoom) / zoom; camY = Math.round(camY * zoom) / zoom;
+  ctx.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom);
+  ctx.drawImage(stat, 0, 0);
+  // water shimmer
+  const x0 = Math.max(0, Math.floor(camX / TS)), y0 = Math.max(0, Math.floor(camY / TS)), x1 = Math.min(W - 1, Math.ceil((camX + vw) / TS)), y1 = Math.min(H - 1, Math.ceil((camY + vh) / TS));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (get(x, y) === WATER) { const ph = (tGame * 1.4 + hash(x, y) % 10) % 4; R(x * TS + 3 + Math.floor(ph * 2), y * TS + 5 + (hash(y, x) % 6), 4, 1, 'rgba(255,255,255,.28)'); }
+  // pickups
+  for (const p of pickups) { const tw = Math.sin(tGame * 5 + p.x) > 0; const x = p.x * TS, y = p.y * TS; if (p.kind === 'coin') { R(x + 6, y + 7, 4, 4, '#d9b13a'); R(x + 7, y + 7, 2, 1, '#f7e08a'); } else { R(x + 6, y + 7, 4, 4, '#3d7fb5'); R(x + 6, y + 7, 2, 2, '#c94c3c'); } if (tw) { R(x + 4, y + 4, 1, 1, '#fff'); R(x + 11, y + 6, 1, 1, '#fff'); R(x + 8, y + 3, 1, 1, '#fffbe0'); } }
+  for (const [wx, wy] of weeds) { const x = wx * TS, y = wy * TS; R(x + 6, y + 7, 1, 7, '#4d8a2c'); R(x + 9, y + 6, 1, 8, '#4d8a2c'); R(x + 4, y + 9, 3, 1, '#5fa03a'); R(x + 9, y + 8, 3, 1, '#5fa03a'); R(x + 5, y + 5, 3, 3, '#f2d64b'); R(x + 9, y + 4, 2, 2, '#f2d64b'); }
+  // ducks
+  for (const d of ducks) { const x = Math.round(d.x), y = Math.round(d.y), f = d.vx < 0; R(x, y + 6, 10, 2, 'rgba(255,255,255,.25)'); R(x + 1, y + 2, 8, 5, d.drake ? '#9a8a74' : '#8a6a48'); R(f ? x : x + 7, y, 3, 3, d.drake ? '#2e7d4a' : '#8a6a48'); R(f ? x - 1 : x + 10, y + 1, 1, 1, '#e8a33a'); R(f ? x + 7 : x + 1, y + 3, 2, 1, '#e8e4dc'); }
+  // entities sorted by y
+  const ents = [];
+  for (const n of npcs) { const [x, y] = rpos(n); ents.push([y, () => drawPerson(x, y, n.look, n.dir, !!n.mv, Math.floor(tGame * 6) % 2)]); }
+  if (S && !titleOpen) { const [x, y] = rpos(player); const L = { skin: '#f1c7a0', hair: S.hair, style: S.style, shirt: '#3d6fb6', legs: '#2e3440', hat: S.hat }; ents.push([y + 0.1, () => drawPerson(x, y, L, player.dir, !!player.mv, S.stats.steps % 2)]); }
+  if (hen.active) { const [x, y] = rpos(hen); ents.push([y, () => drawHen(x, y, hen.dir, tGame)]); }
+  for (const p of pigeons) { if (p.alpha <= 0) continue; ents.push([p.y, () => { ctx.globalAlpha = Math.max(0, p.alpha); const x = Math.round(p.x), y = Math.round(p.y), pk = !p.fly && Math.sin(tGame * 4 + p.x) > 0.7 ? 1 : 0; R(x + 4, y + 8, 7, 4, '#8f949c'); R(x + 9, y + 6 + pk, 3, 3, '#6d7280'); R(x + 12, y + 7 + pk, 1, 1, '#d9a441'); R(x + 9, y + 9, 2, 1, '#5d8a7a'); if (p.fly) { R(x + 2, y + 5 + (Math.floor(tGame * 12) % 2) * 3, 4, 2, '#a3a8b0'); R(x + 9, y + 5 + (Math.floor(tGame * 12) % 2) * 3, 4, 2, '#a3a8b0'); } ctx.globalAlpha = 1; }]); }
+  ents.sort((a, b) => a[0] - b[0]); for (const e of ents) e[1]();
+  for (const c of cars) drawCar(c);
+  for (const t of trains) drawTrain(t);
+  // belisha beacons
+  for (const p of props) if (p.type === 'beacon') { const on = Math.floor(tGame * 1.6) % 2 === 0; R(p.x * TS + 5, p.y * TS + 1, 6, 5, on ? '#f6a623' : '#a8661a'); R(p.x * TS + 6, p.y * TS + 2, 2, 1, on ? '#ffe3a8' : '#c88a3a'); }
+  // night
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const dk = darkness();
+  if (dk > 0) {
+    ctx.fillStyle = 'rgba(16,22,58,' + dk + ')'; ctx.fillRect(0, 0, cw, ch);
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of props) if (p.type === 'lamp') {
+      const sx = (p.x * TS + 8 - camX) * zoom, sy = (p.y * TS + 4 - camY) * zoom, r = 34 * zoom;
+      if (sx < -r || sy < -r || sx > cw + r || sy > ch + r) continue;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r); g.addColorStop(0, 'rgba(255,200,110,' + dk * 0.55 + ')'); g.addColorStop(1, 'rgba(255,200,110,0)');
+      ctx.fillStyle = g; ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  // signs
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const b of BUILDINGS) {
+    if (b.house && b.idx !== 0) continue;
+    const fs = Math.max(10, Math.round((b.small || b.house ? 4.5 : b.flat ? 8 : 5.5) * zoom));
+    const sx = (b.x * TS + b.w * TS / 2 + (b.door.s === 'e' ? -3 : b.door.s === 'w' ? 3 : 0) - camX) * zoom, sy = (b.y * TS + b.h * TS / 2 + (b.door.s === 's' ? -3 : b.door.s === 'n' ? 3 : 0) - camY) * zoom;
+    if (sx < -200 || sy < -40 || sx > cw + 200 || sy > ch + 40) continue;
+    ctx.font = '600 ' + fs + 'px "Pixelify Sans", ui-monospace, monospace';
+    const label = b.house ? 'Home' : b.name, tw = ctx.measureText(label).width, pad = fs * 0.4;
+    ctx.fillStyle = 'rgba(24,34,48,.88)'; ctx.fillRect(Math.round(sx - tw / 2 - pad), Math.round(sy - fs * 0.7), Math.round(tw + pad * 2), Math.round(fs * 1.4));
+    ctx.fillStyle = b.house ? '#f4ecd9' : '#e2a645'; ctx.fillText(label, sx, sy + 1);
+  }
+}
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt); render();
+  requestAnimationFrame(frame);
+}
+
+// ---------- input ----------
+const KEYDIR = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right' };
+const isAction = k => k === ' ' || k === 'Enter' || k === 'e' || k === 'E' || k === 'z' || k === 'Z';
+function actionPress() {
+  ensureAudio();
+  if (titleOpen) return;
+  if (!ui) return interact();
+  if (ui.type === 'talk') return advanceTalk();
+  if (ui.type === 'choose') return pickOpt(ui.sel);
+  if (ui.type === 'mini') return ui.hit();
+}
+addEventListener('keydown', e => {
+  ensureAudio();
+  const k = e.key;
+  if (titleOpen) { if (k === 'Enter' && document.activeElement === document.body) { e.preventDefault(); ($('#tCont').hidden ? $('#tNew') : $('#tCont')).click(); } return; }
+  if (ui && ui.type === 'panel') { if (k === 'Escape' || k === 'b' || k === 'B' || k === 'j' || k === 'J' || k === 'i' || k === 'I') { e.preventDefault(); closePanel(); } return; }
+  if (ui) {
+    if (ui.type === 'choose') {
+      if (k === 'ArrowDown' || k === 's' || k === 'ArrowRight') { e.preventDefault(); moveSel(1); return; }
+      if (k === 'ArrowUp' || k === 'w' || k === 'ArrowLeft') { e.preventDefault(); moveSel(-1); return; }
+      if (k === 'Escape') { e.preventDefault(); const u = ui; closeUI(); u.res(null); return; }
+      if (/^[1-9]$/.test(k)) { e.preventDefault(); pickOpt(+k - 1); return; }
+    }
+    if (isAction(k) || (k === 'Escape' && ui.type === 'talk')) { e.preventDefault(); if (!e.repeat) actionPress(); }
+    if (KEYDIR[k]) e.preventDefault();
+    return;
+  }
+  if (KEYDIR[k]) { e.preventDefault(); const d = KEYDIR[k]; if (!heldDirs.includes(d)) heldDirs.push(d); return; }
+  if (isAction(k)) { e.preventDefault(); if (!e.repeat) actionPress(); return; }
+  if (k === 'b' || k === 'B' || k === 'i' || k === 'I') openBag();
+  else if (k === 'j' || k === 'J' || k === 'q' || k === 'Q' || k === 'Escape') openPanel('journal');
+  else if (k === 'm' || k === 'M') toggleSound();
+});
+addEventListener('keyup', e => { const d = KEYDIR[e.key]; if (d) { const i = heldDirs.indexOf(d); if (i >= 0) heldDirs.splice(i, 1); } });
+addEventListener('blur', () => { heldDirs.length = 0; padRelease(); });
+
+// touch pad
+const pad = $('#pad'); let isTouch = false;
+function showPad() { if (isTouch) return; isTouch = true; pad.hidden = false; lastHint = '~'; requestAnimationFrame(resize); }
+if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) showPad();
+addEventListener('touchstart', showPad, { passive: true, once: true });
+function padRelease() { pad.querySelectorAll('.dpad button').forEach(b => b.classList.remove('on')); }
+pad.querySelectorAll('.dpad button').forEach(b => {
+  const d = b.dataset.dir;
+  const down = e => { e.preventDefault(); ensureAudio(); if (ui && ui.type === 'choose') { moveSel(d === 'up' || d === 'left' ? -1 : 1); return; } if (ui) return; b.classList.add('on'); if (!heldDirs.includes(d)) heldDirs.push(d); };
+  const up = e => { b.classList.remove('on'); const i = heldDirs.indexOf(d); if (i >= 0) heldDirs.splice(i, 1); };
+  b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+$('#padA').addEventListener('pointerdown', e => { e.preventDefault(); actionPress(); });
+$('#padBag').addEventListener('click', () => { if (ui && ui.type === 'panel') closePanel(); else if (!ui) openBag(); });
+$('#bBag').addEventListener('click', () => { if (ui && ui.type === 'panel') closePanel(); else if (!ui) openBag(); });
+$('#bJournal').addEventListener('click', () => { if (ui && ui.type === 'panel') closePanel(); else if (!ui) openPanel('journal'); });
+const bSound = $('#bSound');
+function toggleSound() { muted = !muted; bSound.textContent = muted ? 'Sound off' : 'Sound on'; bSound.setAttribute('aria-pressed', String(!muted)); try { localStorage.setItem(KEY + '-mute', muted ? '1' : ''); } catch (e) {} }
+bSound.addEventListener('click', () => { ensureAudio(); toggleSound(); });
+try { if (localStorage.getItem(KEY + '-mute')) { muted = true; bSound.textContent = 'Sound off'; bSound.setAttribute('aria-pressed', 'false'); } } catch (e) {}
+
+// ---------- start ----------
+const titleEl = $('#title');
+function begin() { titleOpen = false; titleEl.hidden = true; zoneName = ''; arrive(); hudUpdate(); }
+async function startNew() {
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  applyState(newState()); begin(); ensureAudio();
+  await talk(null, 'Your phone buzzes. A text from Nan:', '"Day off today! Go and enjoy Orpington. I left £15 on the side. Get your Orpington Passport stamped, the notice board outside the station says how. Love Nan x"', 'You pocket the money and step out onto Cook Close. Walk with the arrow keys or the pad. Press Space or A to talk to people and go into places.');
+}
+$('#tNew').addEventListener('click', () => { ensureAudio(); startNew(); });
+$('#tCont').addEventListener('click', () => { ensureAudio(); const s = loadSaved(); if (s) { applyState(s); begin(); toast('Welcome back. Day ' + S.day + ', ' + hhmm(hour()) + '.'); } else startNew(); });
+setInterval(save, 15000);
+addEventListener('pagehide', save);
+document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+
+function boot(data) {
+  const snap = data && data.save;
+  if (snap) { try { applyState(JSON.parse(snap)); begin(); } catch (e) { applyState(newState()); } }
+  else { applyState(newState()); if (loadSaved()) $('#tCont').hidden = false; }
+  requestAnimationFrame(t => { last = t; frame(t); });
+}
+window.claude?.hot?.snapshot?.(() => (S && !titleOpen ? { save: serialize() } : {}));
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+if (document.fonts && document.fonts.load) document.fonts.load('600 12px "Pixelify Sans"').catch(() => {});
+})();
+</script>
