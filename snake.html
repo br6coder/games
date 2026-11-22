@@ -1,20 +1,29 @@
-<title>Snake</title>
+<title>Schnauzer Snake</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-  /* Layout: one centered column — score bar, square board, touch d-pad. Single dark arcade look by choice. */
+  /* Layout: one centered column — score bar, sound toggles, square lawn board, touch d-pad. Single look by choice. */
   :root {
-    --bg: #0e1a17;
-    --board: #14251f;
-    --grid: #1a2f27;
-    --snake: #7bdc8a;
-    --snake-head: #c8f7a8;
-    --food: #ff7a59;
+    --bg: #13201a;
+    --lawn: #9cc96b;
+    --lawn-alt: #93c062;
+    --blade: #7fae4f;
+    --fur: #1b1b1f;
+    --fur-edge: #4a4a53;
+    --fur-sheen: #2a2a30;
+    --beard: #2c2c33;
+    --brow: #8a8a94;
+    --eye: #3b2414;
+    --nose: #050505;
+    --biscuit: #dfa65c;
+    --biscuit-edge: #9c6a2c;
     --fg: #e6f2ec;
     --muted: #8fb0a3;
+    --accent: #dfa65c;
     --btn: #1f3b31;
     --btn-active: #2e5a4a;
     color-scheme: dark;
   }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     margin: 0;
@@ -40,30 +49,30 @@
     align-items: baseline;
     gap: 12px;
   }
-  h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.04em; }
+  h1 { font-size: 1.3rem; margin: 0; letter-spacing: 0.03em; }
   .scores { display: flex; gap: 16px; font-variant-numeric: tabular-nums; color: var(--muted); }
   .scores b { color: var(--fg); font-weight: 600; }
-  .stage { position: relative; width: min(92vw, 62vh, 480px); aspect-ratio: 1; }
+  .stage { position: relative; width: min(92vw, 62vh, 480px); aspect-ratio: 1; max-width: 100%; }
   canvas {
     width: 100%; height: 100%;
     display: block;
-    background: var(--board);
+    background: var(--lawn);
     border-radius: 6px;
     touch-action: none;
   }
   .overlay {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 8px; text-align: center;
-    background: rgba(14, 26, 23, 0.78);
+    gap: 8px; text-align: center; padding: 16px;
+    background: rgba(19, 32, 26, 0.74);
     border-radius: 6px;
     cursor: pointer;
   }
-  .overlay h2 { margin: 0; font-size: 1.6rem; }
-  .overlay p { margin: 0; color: var(--muted); }
+  .overlay h2 { margin: 0; font-size: 1.6rem; text-wrap: balance; }
+  .overlay p { margin: 0; color: var(--fg); opacity: 0.85; }
   .overlay .go {
     margin-top: 6px; padding: 10px 22px; border-radius: 6px;
-    background: var(--snake); color: #0e1a17; font-weight: 700; font-size: 1.05rem;
+    background: var(--accent); color: #2a1a08; font-weight: 700; font-size: 1.05rem;
   }
   .pad {
     display: grid;
@@ -79,12 +88,12 @@
     touch-action: manipulation;
   }
   .pad button:active { background: var(--btn-active); }
-  .pad button:focus-visible { outline: 2px solid var(--snake); outline-offset: 2px; }
+  .pad button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .up { grid-column: 2; grid-row: 1; }
   .left { grid-column: 1; grid-row: 2; }
   .down { grid-column: 2; grid-row: 2; }
   .right { grid-column: 3; grid-row: 2; }
-  .hint { color: var(--muted); font-size: 0.85rem; margin: 0; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin: 0; text-align: center; }
   .toggles { width: min(92vw, 62vh, 480px); display: flex; gap: 8px; }
   .toggles button {
     flex: 1; border: 0; border-radius: 8px; padding: 8px 10px;
@@ -92,14 +101,14 @@
     font: inherit; font-size: 0.9rem; touch-action: manipulation;
   }
   .toggles button[aria-pressed="true"] { color: var(--fg); background: var(--btn-active); }
-  .toggles button:focus-visible { outline: 2px solid var(--snake); outline-offset: 2px; }
+  .toggles button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (max-height: 560px) { .pad { display: none; } }
 </style>
 
 <header>
-  <h1>Snake</h1>
+  <h1>Schnauzer Snake</h1>
   <div class="scores">
-    <span>Score <b id="score">0</b></span>
+    <span>Biscuits <b id="score">0</b></span>
     <span>Best <b id="best">0</b></span>
   </div>
 </header>
@@ -110,10 +119,10 @@
 </div>
 
 <div class="stage">
-  <canvas id="c" width="400" height="400"></canvas>
+  <canvas id="c" width="800" height="800"></canvas>
   <div class="overlay" id="overlay">
-    <h2 id="ovTitle">Snake</h2>
-    <p id="ovMsg">Swipe the board or use the arrows.</p>
+    <h2 id="ovTitle">Schnauzer Snake</h2>
+    <p id="ovMsg">Guide your schnauzer to the biscuits. Every biscuit makes him longer!</p>
     <div class="go" id="ovBtn">Tap to start</div>
   </div>
 </div>
@@ -124,7 +133,7 @@
   <button class="down" data-dir="down" aria-label="Down">▼</button>
   <button class="right" data-dir="right" aria-label="Right">▶</button>
 </div>
-<p class="hint">Swipe, tap the arrows, or use arrow keys / WASD.</p>
+<p class="hint">Swipe the lawn, tap the arrows, or use arrow keys / WASD.</p>
 
 <script>
 (function () {
@@ -140,12 +149,12 @@
   var ovBtn = document.getElementById('ovBtn');
 
   var DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-  var snake, dir, queued, food, score, best = 0, timer, running = false;
+  var snake, dir, queued, food, score, best = 0, timer, running = false, munchUntil = 0;
 
   try { best = parseInt(localStorage.getItem('snake-best'), 10) || 0; } catch (e) {}
   bestEl.textContent = best;
 
-  // ---------- Sound: chiptune music + effects, synthesized with Web Audio ----------
+  // ---------- Sound: chiptune music + dog effects, synthesized with Web Audio ----------
   var Sound = (function () {
     var ac = null, master, musicBus, sfxBus, noiseBuf;
     var musicOn = true, sfxOn = true;
@@ -195,6 +204,22 @@
       s.start(t); s.stop(t + dur + 0.02);
     }
 
+    // A small-dog "yip": a fast rising-then-falling buzz through a band-pass filter
+    function bark(t, vol) {
+      var o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(480, t);
+      o.frequency.exponentialRampToValueAtTime(900, t + 0.03);
+      o.frequency.exponentialRampToValueAtTime(330, t + 0.15);
+      f.type = 'bandpass'; f.frequency.value = 1200; f.Q.value = 1.2;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+      o.connect(f); f.connect(g); g.connect(sfxBus);
+      o.start(t); o.stop(t + 0.2);
+      noise(t, vol * 0.35, sfxBus, 0.06, 1500);
+    }
+
     // Am - F - C - G loop, 8 eighth-note steps per bar
     var ROOTS = [45, 41, 48, 43];
     var CHORDS = [[69, 72, 76], [65, 69, 72], [67, 72, 76], [67, 71, 74]];
@@ -217,27 +242,34 @@
       if (!ac) return;
       stopMusic();
       tempo = 1; step = 0;
-      nextTime = ac.currentTime + 0.3;
+      nextTime = ac.currentTime + 0.5;
       pump = setInterval(pumpLoop, 30);
     }
     function stopMusic() { clearInterval(pump); pump = null; }
     function setTempo(x) { tempo = x; }
 
-    function seq(notes, gap, dur, type, vol) {
-      var t = ac.currentTime;
-      notes.forEach(function (m, i) { tone(hz(m), t + i * gap, dur, type, vol, sfxBus); });
+    function seq(notes, start, gap, dur, type, vol) {
+      notes.forEach(function (m, i) { tone(hz(m), start + i * gap, dur, type, vol, sfxBus); });
     }
 
     function sfx(name) {
       if (!ac || !sfxOn) return;
       var t = ac.currentTime;
-      if (name === 'eat') seq([76, 83], 0.06, 0.1, 'square', 0.3);
-      else if (name === 'level') seq([76, 79, 84, 88], 0.06, 0.12, 'square', 0.3);
-      else if (name === 'turn') tone(hz(57), t, 0.03, 'triangle', 0.12, sfxBus);
-      else if (name === 'start') seq([60, 64, 67, 72], 0.07, 0.12, 'square', 0.28);
-      else if (name === 'over') {
-        tone(440, t, 0.7, 'sawtooth', 0.3, sfxBus, 70);
-        noise(t, 0.35, sfxBus, 0.3, 800);
+      if (name === 'eat') {            // crunch crunch + happy blip
+        noise(t, 0.4, sfxBus, 0.05, 2500);
+        noise(t + 0.08, 0.32, sfxBus, 0.05, 2500);
+        seq([76, 83], t + 0.12, 0.06, 0.1, 'square', 0.22);
+      } else if (name === 'level') {   // every 5 biscuits: a yip and a jingle
+        bark(t, 0.6);
+        seq([76, 79, 84, 88], t + 0.18, 0.06, 0.12, 'square', 0.25);
+      } else if (name === 'turn') {
+        tone(hz(57), t, 0.03, 'triangle', 0.12, sfxBus);
+      } else if (name === 'start') {   // "woof woof"
+        bark(t, 0.6);
+        bark(t + 0.24, 0.6);
+      } else if (name === 'over') {    // sad whimper
+        tone(1000, t, 0.35, 'sine', 0.3, sfxBus, 620);
+        tone(900, t + 0.42, 0.55, 'sine', 0.3, sfxBus, 420);
       }
     }
 
@@ -276,6 +308,7 @@
   sfxBtn.addEventListener('click', function () { Sound.init(); Sound.setSfx(!Sound.sfxOn()); syncToggles(); });
   syncToggles();
 
+  // ---------- Game logic ----------
   function placeFood() {
     var free = [];
     for (var x = 0; x < N; x++) for (var y = 0; y < N; y++) {
@@ -304,11 +337,10 @@
     Sound.init();
     Sound.sfx('start');
     Sound.startMusic();
-    draw();
     schedule();
   }
 
-  function gameOver() {
+  function gameOver(won) {
     running = false;
     clearTimeout(timer);
     Sound.stopMusic();
@@ -317,8 +349,8 @@
       best = score; bestEl.textContent = best;
       try { localStorage.setItem('snake-best', String(best)); } catch (e) {}
     }
-    ovTitle.textContent = 'Game over';
-    ovMsg.textContent = 'You scored ' + score + '.';
+    ovTitle.textContent = won ? 'Good boy!' : 'Ruff luck!';
+    ovMsg.textContent = 'Your schnauzer ate ' + score + (score === 1 ? ' biscuit.' : ' biscuits.');
     ovBtn.textContent = 'Tap to play again';
     overlay.hidden = false;
   }
@@ -340,52 +372,253 @@
     var body = ate ? snake : snake.slice(0, -1);
     var hit = head[0] < 0 || head[1] < 0 || head[0] >= N || head[1] >= N ||
       body.some(function (s) { return s[0] === head[0] && s[1] === head[1]; });
-    if (hit) { draw(); gameOver(); return; }
+    if (hit) { gameOver(false); return; }
     snake.unshift(head);
     if (ate) {
       score++; scoreEl.textContent = score;
+      munchUntil = performance.now() + 250;
       Sound.sfx(score % 5 === 0 ? 'level' : 'eat');
       Sound.setTempo(Math.min(1.6, 140 / delay()));
-      if (snake.length === N * N) { draw(); gameOver(); return; }
+      if (snake.length === N * N) { gameOver(true); return; }
       placeFood();
     } else {
       snake.pop();
     }
-    draw();
     schedule();
   }
 
-  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  // ---------- Drawing ----------
+  var rootStyle = getComputedStyle(document.documentElement);
+  function tok(name) { return rootStyle.getPropertyValue(name).trim(); }
+  var C = {
+    lawn: tok('--lawn'), lawnAlt: tok('--lawn-alt'), blade: tok('--blade'),
+    fur: tok('--fur'), edge: tok('--fur-edge'), sheen: tok('--fur-sheen'), beard: tok('--beard'),
+    brow: tok('--brow'), eye: tok('--eye'), nose: tok('--nose'),
+    biscuit: tok('--biscuit'), biscuitEdge: tok('--biscuit-edge')
+  };
 
-  function draw() {
-    ctx.fillStyle = css('--board');
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = css('--grid');
+  // Lawn is drawn once to an offscreen canvas
+  var bg = document.createElement('canvas');
+  bg.width = canvas.width; bg.height = canvas.height;
+  (function paintLawn() {
+    var b = bg.getContext('2d');
+    b.fillStyle = C.lawn; b.fillRect(0, 0, bg.width, bg.height);
+    b.fillStyle = C.lawnAlt;
     for (var x = 0; x < N; x++) for (var y = 0; y < N; y++) {
-      if ((x + y) % 2 === 0) ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      if ((x + y) % 2 === 0) b.fillRect(x * CELL, y * CELL, CELL, CELL);
     }
-    // food
-    ctx.fillStyle = css('--food');
+    var seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    b.strokeStyle = C.blade; b.lineWidth = CELL * 0.05; b.lineCap = 'round';
+    for (var i = 0; i < 160; i++) {
+      var gx = rnd() * bg.width, gy = rnd() * bg.height;
+      b.beginPath();
+      b.moveTo(gx, gy); b.lineTo(gx - CELL * 0.06, gy - CELL * 0.16);
+      b.moveTo(gx + CELL * 0.06, gy); b.lineTo(gx + CELL * 0.1, gy - CELL * 0.14);
+      b.stroke();
+    }
+  })();
+
+  function center(p) { return [p[0] * CELL + CELL / 2, p[1] * CELL + CELL / 2]; }
+
+  function rr(x, y, w, h, r) {
     ctx.beginPath();
-    ctx.arc(food[0] * CELL + CELL / 2, food[1] * CELL + CELL / 2, CELL * 0.36, 0, Math.PI * 2);
-    ctx.fill();
-    // snake
-    for (var i = snake.length - 1; i >= 0; i--) {
-      ctx.fillStyle = i === 0 ? css('--snake-head') : css('--snake');
-      var p = 2;
-      ctx.fillRect(snake[i][0] * CELL + p / 2, snake[i][1] * CELL + p / 2, CELL - p, CELL - p);
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Direction each segment faces (toward the head)
+  function segDir(i) {
+    var a = i === 0 ? snake[0] : snake[i - 1], b = i === 0 ? snake[1] : snake[i];
+    return [a[0] - b[0], a[1] - b[1]];
+  }
+
+  function drawBiscuit(t) {
+    var u = CELL, p = center(food), pulse = 1 + Math.sin(t / 220) * 0.06;
+    ctx.save();
+    ctx.translate(p[0], p[1]);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.ellipse(0, u * 0.3, u * 0.36, u * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.rotate(-0.5);
+    ctx.scale(pulse, pulse);
+    function bone(g) {
+      ctx.beginPath();
+      ctx.rect(-u * 0.27, -u * 0.1 - g, u * 0.54, u * 0.2 + 2 * g);
+      [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(function (k) {
+        var cx = k[0] * u * 0.27, cy = k[1] * u * 0.1;
+        ctx.moveTo(cx + u * 0.12 + g, cy);
+        ctx.arc(cx, cy, u * 0.12 + g, 0, Math.PI * 2);
+      });
+      ctx.fill();
+    }
+    ctx.fillStyle = C.biscuitEdge; bone(u * 0.035);
+    ctx.fillStyle = C.biscuit; bone(0);
+    ctx.fillStyle = C.biscuitEdge;
+    [-0.13, 0, 0.13].forEach(function (x) {
+      ctx.beginPath(); ctx.arc(x * u, 0, u * 0.025, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  function drawBody() {
+    var u = CELL, i, p;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    function path() {
+      ctx.beginPath();
+      p = center(snake[0]); ctx.moveTo(p[0], p[1]);
+      for (i = 1; i < snake.length; i++) { p = center(snake[i]); ctx.lineTo(p[0], p[1]); }
+    }
+    path(); ctx.strokeStyle = C.edge; ctx.lineWidth = u * 0.8; ctx.stroke();
+    path(); ctx.strokeStyle = C.fur; ctx.lineWidth = u * 0.7; ctx.stroke();
+    path(); ctx.strokeStyle = C.sheen; ctx.lineWidth = u * 0.2; ctx.stroke();
+    // wiry fur tufts along both flanks
+    ctx.strokeStyle = C.edge; ctx.lineWidth = u * 0.04;
+    for (i = 1; i < snake.length; i++) {
+      var c = center(snake[i]), d = segDir(i), n = [-d[1], d[0]];
+      [-1, 1].forEach(function (s) {
+        for (var k = -1; k <= 1; k++) {
+          var bx = c[0] + n[0] * s * u * 0.3 + d[0] * k * u * 0.25;
+          var by = c[1] + n[1] * s * u * 0.3 + d[1] * k * u * 0.25;
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx + n[0] * s * u * 0.1 - d[0] * u * 0.08, by + n[1] * s * u * 0.1 - d[1] * u * 0.08);
+          ctx.stroke();
+        }
+      });
     }
   }
 
-  // Overlay tap starts / restarts
+  function drawPaws(i, phase) {
+    var u = CELL, c = center(snake[i]), d = segDir(i), n = [-d[1], d[0]];
+    var ang = Math.atan2(d[1], d[0]);
+    [-1, 1].forEach(function (s) {
+      var off = phase * s * u * 0.12;
+      ctx.beginPath();
+      ctx.ellipse(c[0] + n[0] * s * u * 0.42 + d[0] * off, c[1] + n[1] * s * u * 0.42 + d[1] * off,
+        u * 0.14, u * 0.09, ang, 0, Math.PI * 2);
+      ctx.fillStyle = C.fur; ctx.fill();
+      ctx.strokeStyle = C.edge; ctx.lineWidth = u * 0.035; ctx.stroke();
+    });
+  }
+
+  function drawTail(t) {
+    var u = CELL, last = snake[snake.length - 1], prev = snake[snake.length - 2];
+    var c = center(last), away = Math.atan2(last[1] - prev[1], last[0] - prev[0]);
+    var wag = Math.sin(t / (running ? 70 : 120)) * 0.5;
+    ctx.save();
+    ctx.translate(c[0], c[1]);
+    ctx.rotate(away + wag);
+    ctx.beginPath();
+    ctx.moveTo(u * 0.15, -u * 0.13);
+    ctx.quadraticCurveTo(u * 0.5, -u * 0.1, u * 0.66, 0);
+    ctx.quadraticCurveTo(u * 0.5, u * 0.1, u * 0.15, u * 0.13);
+    ctx.closePath();
+    ctx.fillStyle = C.fur; ctx.fill();
+    ctx.strokeStyle = C.edge; ctx.lineWidth = u * 0.035; ctx.stroke();
+    ctx.restore();
+  }
+
+  // Black miniature schnauzer head, seen from above, facing +x before rotation
+  function drawHead(t) {
+    var u = CELL, c = center(snake[0]), d = segDir(0);
+    var munch = t < munchUntil ? Math.sin((munchUntil - t) / 25) * 0.04 : 0;
+    ctx.save();
+    ctx.translate(c[0], c[1]);
+    ctx.rotate(Math.atan2(d[1], d[0]));
+    ctx.scale(1.3, 1.3);
+    ctx.lineWidth = u * 0.035; ctx.strokeStyle = C.edge; ctx.lineCap = 'round';
+
+    // folded ears
+    [-1, 1].forEach(function (s) {
+      ctx.beginPath();
+      ctx.ellipse(-u * 0.12, s * u * 0.37, u * 0.22, u * 0.13, s * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = C.sheen; ctx.fill(); ctx.stroke();
+    });
+
+    // bushy beard flaring past the muzzle
+    ctx.beginPath();
+    ctx.moveTo(u * 0.1, -u * 0.27);
+    ctx.lineTo(u * 0.66, -u * (0.3 + munch));
+    ctx.lineTo(u * 0.77, -u * 0.12);
+    ctx.lineTo(u * 0.8, 0);
+    ctx.lineTo(u * 0.77, u * 0.12);
+    ctx.lineTo(u * 0.66, u * (0.3 + munch));
+    ctx.lineTo(u * 0.1, u * 0.27);
+    ctx.closePath();
+    ctx.fillStyle = C.beard; ctx.fill(); ctx.stroke();
+
+    // skull and long rectangular muzzle
+    rr(-u * 0.42, -u * 0.34, u * 0.66, u * 0.68, u * 0.2);
+    ctx.fillStyle = C.fur; ctx.fill(); ctx.stroke();
+    rr(u * 0.12, -u * 0.2, u * 0.54, u * 0.4, u * 0.12);
+    ctx.fillStyle = C.fur; ctx.fill(); ctx.stroke();
+
+    // whisker strands
+    ctx.strokeStyle = C.brow; ctx.lineWidth = u * 0.03;
+    [-1, 1].forEach(function (s) {
+      for (var k = 0; k < 4; k++) {
+        ctx.beginPath();
+        ctx.moveTo(u * (0.26 + k * 0.12), s * u * 0.17);
+        ctx.lineTo(u * (0.31 + k * 0.13), s * u * (0.29 + munch));
+        ctx.stroke();
+      }
+    });
+
+    // eyes
+    [-1, 1].forEach(function (s) {
+      var ex = 0, ey = s * u * 0.15;
+      ctx.fillStyle = '#e8e2d6'; ctx.beginPath(); ctx.arc(ex, ey, u * 0.075, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = C.eye; ctx.beginPath(); ctx.arc(ex + u * 0.01, ey, u * 0.056, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(ex + u * 0.03, ey - s * u * 0.015, u * 0.018, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // famous schnauzer eyebrows
+    ctx.strokeStyle = C.brow; ctx.lineWidth = u * 0.045;
+    [-1, 1].forEach(function (s) {
+      for (var k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.moveTo(-u * 0.07, s * u * (0.1 + k * 0.05));
+        ctx.lineTo(u * 0.12, s * u * (0.16 + k * 0.06));
+        ctx.stroke();
+      }
+    });
+
+    // nose
+    ctx.fillStyle = C.nose;
+    ctx.beginPath(); ctx.ellipse(u * 0.66, 0, u * 0.08, u * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath(); ctx.arc(u * 0.68, -u * 0.04, u * 0.025, 0, Math.PI * 2); ctx.fill();
+
+    ctx.restore();
+  }
+
+  function draw(t) {
+    ctx.drawImage(bg, 0, 0);
+    drawBiscuit(t);
+    drawBody();
+    var phase = running ? Math.sin(t / 60) : 0;
+    drawPaws(snake.length - 1, -phase);
+    drawPaws(1, phase);
+    drawTail(t);
+    drawHead(t);
+  }
+
+  function frame(t) {
+    draw(t);
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Input ----------
   overlay.addEventListener('click', start);
 
-  // On-screen d-pad
   Array.prototype.forEach.call(document.querySelectorAll('.pad button'), function (b) {
     b.addEventListener('pointerdown', function (e) { e.preventDefault(); turn(b.getAttribute('data-dir')); });
   });
 
-  // Swipe on the board
   var sx = 0, sy = 0, tracking = false;
   canvas.addEventListener('pointerdown', function (e) { sx = e.clientX; sy = e.clientY; tracking = true; });
   canvas.addEventListener('pointermove', function (e) {
@@ -399,7 +632,6 @@
   canvas.addEventListener('pointerup', endSwipe);
   canvas.addEventListener('pointercancel', endSwipe);
 
-  // Keyboard
   var KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
   document.addEventListener('keydown', function (e) {
     var k = KEYS[e.key];
@@ -409,6 +641,6 @@
 
   // Idle preview behind the start overlay
   reset();
-  draw();
+  requestAnimationFrame(frame);
 })();
 </script>
