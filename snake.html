@@ -1,4 +1,4 @@
-<title>Schnauzer Snake</title>
+<title>Marmite Doggy Biscuits</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
   /* Layout: one centered column — score bar, sound toggles, square lawn board, touch d-pad. Single look by choice. */
@@ -106,7 +106,7 @@
 </style>
 
 <header>
-  <h1>Schnauzer Snake</h1>
+  <h1>Marmite Doggy Biscuits</h1>
   <div class="scores">
     <span>Biscuits <b id="score">0</b></span>
     <span>Best <b id="best">0</b></span>
@@ -121,8 +121,8 @@
 <div class="stage">
   <canvas id="c" width="800" height="800"></canvas>
   <div class="overlay" id="overlay">
-    <h2 id="ovTitle">Schnauzer Snake</h2>
-    <p id="ovMsg">Guide your schnauzer to the biscuits. Every biscuit makes him longer!</p>
+    <h2 id="ovTitle">Marmite Doggy Biscuits</h2>
+    <p id="ovMsg">Guide Marmite to the doggy biscuits. Every biscuit makes him longer!</p>
     <div class="go" id="ovBtn">Tap to start</div>
   </div>
 </div>
@@ -220,6 +220,26 @@
       noise(t, vol * 0.35, sfxBus, 0.06, 1500);
     }
 
+    // A deeper "woof": two buzzy oscillators that swell up then drop, through a low band-pass
+    function woof(t, vol) {
+      var f = ac.createBiquadFilter(), g = ac.createGain();
+      f.type = 'bandpass'; f.frequency.value = 650; f.Q.value = 0.9;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+      g.gain.setValueAtTime(vol, t + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+      f.connect(g); g.connect(sfxBus);
+      ['sawtooth', 'square'].forEach(function (type, i) {
+        var o = ac.createOscillator();
+        o.type = type;
+        o.frequency.setValueAtTime(190 + i * 3, t);
+        o.frequency.exponentialRampToValueAtTime(330 + i * 4, t + 0.05);
+        o.frequency.exponentialRampToValueAtTime(150, t + 0.27);
+        o.connect(f); o.start(t); o.stop(t + 0.3);
+      });
+      noise(t, vol * 0.3, sfxBus, 0.08, 500);
+    }
+
     // Am - F - C - G loop, 8 eighth-note steps per bar
     var ROOTS = [45, 41, 48, 43];
     var CHORDS = [[69, 72, 76], [65, 69, 72], [67, 72, 76], [67, 71, 74]];
@@ -255,13 +275,13 @@
     function sfx(name) {
       if (!ac || !sfxOn) return;
       var t = ac.currentTime;
-      if (name === 'eat') {            // crunch crunch + happy blip
-        noise(t, 0.4, sfxBus, 0.05, 2500);
-        noise(t + 0.08, 0.32, sfxBus, 0.05, 2500);
-        seq([76, 83], t + 0.12, 0.06, 0.1, 'square', 0.22);
+      if (name === 'eat') {            // WOOF, then crunch crunch
+        woof(t, 0.8);
+        noise(t + 0.3, 0.35, sfxBus, 0.05, 2500);
+        noise(t + 0.38, 0.28, sfxBus, 0.05, 2500);
       } else if (name === 'level') {   // every 5 biscuits: a yip and a jingle
-        bark(t, 0.6);
-        seq([76, 79, 84, 88], t + 0.18, 0.06, 0.12, 'square', 0.25);
+        woof(t, 0.8);
+        seq([76, 79, 84, 88], t + 0.3, 0.06, 0.12, 'square', 0.25);
       } else if (name === 'turn') {
         tone(hz(57), t, 0.03, 'triangle', 0.12, sfxBus);
       } else if (name === 'start') {   // "woof woof"
@@ -350,7 +370,7 @@
       try { localStorage.setItem('snake-best', String(best)); } catch (e) {}
     }
     ovTitle.textContent = won ? 'Good boy!' : 'Ruff luck!';
-    ovMsg.textContent = 'Your schnauzer ate ' + score + (score === 1 ? ' biscuit.' : ' biscuits.');
+    ovMsg.textContent = 'Marmite ate ' + score + (score === 1 ? ' biscuit.' : ' biscuits.');
     ovBtn.textContent = 'Tap to play again';
     overlay.hidden = false;
   }
