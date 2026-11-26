@@ -157,6 +157,7 @@
         <p class="tag">You're the drummer. The band is counting on you.</p>
         <div class="songs" id="songList"></div>
         <p class="help">Tap the pads when the beats hit the line. You can also tap the lanes. Keys: D F J K. Miss too many and the crowd turns on you. Turn your sound on.</p>
+        <p class="help" id="latInfo" hidden></p>
       </div>
     </div>
 
@@ -272,7 +273,12 @@
   ];
 
   /* ---------------- Audio ---------------- */
+  /* The band is rendered offline into one buffer per song, and each drum into a few short samples.
+     The live audio graph stays tiny, so a tap only has to start one ready-made buffer. */
   var A = { ac: null };
+  var X = null, DEST = null, CUR = null;
+  var DRUMS = null, drumRot = [0, 0, 0, 0];
+  var RENDERED = {};
   function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
   function audioInit() {
@@ -284,55 +290,154 @@
     if (!AC) return false;
     var ac;
     try { ac = new AC({ latencyHint: 'interactive' }); } catch (e) { ac = new AC(); }
-    A.ac = ac;
+    A.ac = ac; X = ac;
     var comp = ac.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.2;
     comp.connect(ac.destination);
     A.master = ac.createGain(); A.master.gain.value = 0.85; A.master.connect(comp);
-
-    var len = Math.floor(ac.sampleRate * 1.8);
-    var ir = ac.createBuffer(2, len, ac.sampleRate);
-    for (var c = 0; c < 2; c++) {
-      var d = ir.getChannelData(c);
-      for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
-    }
-    A.verb = ac.createConvolver(); A.verb.buffer = ir;
-    var verbOut = ac.createGain(); verbOut.gain.value = 0.5;
-    A.verb.connect(verbOut); verbOut.connect(A.master);
-
     A.drums = ac.createGain(); A.drums.gain.value = 1; A.drums.connect(A.master);
-    var drumSend = ac.createGain(); drumSend.gain.value = 0.12; A.drums.connect(drumSend); drumSend.connect(A.verb);
-
+    DEST = A.drums;
     A.bandFilter = ac.createBiquadFilter(); A.bandFilter.type = 'lowpass'; A.bandFilter.frequency.value = 18000;
     A.bandFilter.connect(A.master);
-    A.bandSend = ac.createGain(); A.bandSend.gain.value = 0.28; A.bandSend.connect(A.verb);
-
-    var nl = ac.sampleRate * 2;
-    A.noise = ac.createBuffer(1, nl, ac.sampleRate);
-    var nd = A.noise.getChannelData(0);
-    for (var j = 0; j < nl; j++) nd[j] = Math.random() * 2 - 1;
-
-    var curve = new Float32Array(1024);
-    for (var k = 0; k < 1024; k++) { var x = k / 512 - 1; curve[k] = Math.tanh(x * 6) * 0.9; }
-    A.curve = curve;
 
     var b = ac.createBuffer(1, 1, 22050), s = ac.createBufferSource();
     s.buffer = b; s.connect(ac.destination); s.start(0);
     if (ac.state === 'suspended') ac.resume();
     return true;
   }
+  var SONG_RATE = 24000, DRUM_RATE = 44100;
+  var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  function makeIR(rate, secs) {
+    var off = new OAC(2, 1, rate), len = Math.floor(rate * secs), ir = off.createBuffer(2, len, rate);
+    for (var c = 0; c < 2; c++) {
+      var d = ir.getChannelData(c);
+      for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+    }
+    return ir;
+  }
+  function prepBuffers() {
+    A.irSong = makeIR(SONG_RATE, 1.4);
+    A.irDrum = makeIR(DRUM_RATE, 1.4);
+    var off = new OAC(1, 1, DRUM_RATE), nl = DRUM_RATE * 2;
+    A.noise = off.createBuffer(1, nl, DRUM_RATE);
+    var nd = A.noise.getChannelData(0);
+    for (var j = 0; j < nl; j++) nd[j] = Math.random() * 2 - 1;
+    var curve = new Float32Array(1024);
+    for (var k = 0; k < 1024; k++) { var x = k / 512 - 1; curve[k] = Math.tanh(x * 6) * 0.9; }
+    A.curve = curve;
+  }
   function lat() {
     var ac = A.ac; if (!ac) return 0;
     var l = (typeof ac.outputLatency === 'number' && ac.outputLatency > 0) ? ac.outputLatency : (ac.baseLatency || 0);
     return Math.min(0.2, l);
   }
+  function reportedDelayMs() {
+    var ac = A.ac; if (!ac) return 0;
+    return Math.round(((ac.baseLatency || 0) + (ac.outputLatency || 0)) * 1000);
+  }
 
-  function makeSongChain() {
-    var ac = A.ac, S = {};
+  function offlineCtx(seconds, rate) { return new OAC(2, Math.ceil(seconds * rate), rate); }
+  function renderCtx(off) {
+    return new Promise(function (res, rej) {
+      off.oncomplete = function (e) { res(e.renderedBuffer); };
+      var p = off.startRendering();
+      if (p && p.then) p.then(res, rej);
+    });
+  }
+  function addVerb(off, amount) {
+    var v = off.createConvolver(); v.buffer = off.sampleRate === SONG_RATE ? A.irSong : A.irDrum;
+    var g = off.createGain(); g.gain.value = amount;
+    v.connect(g); g.connect(off.destination);
+    return v;
+  }
+  function withCtx(ctx, dest, fn) {
+    var px = X, pd = DEST; X = ctx; DEST = dest;
+    try { fn(); } finally { X = px; DEST = pd; }
+  }
+  function fadeTail(buf, secs) {
+    var n = Math.min(buf.length, Math.floor(secs * buf.sampleRate));
+    for (var c = 0; c < buf.numberOfChannels; c++) {
+      var d = buf.getChannelData(c);
+      for (var i = 0; i < n; i++) d[buf.length - n + i] *= 1 - i / n;
+    }
+    return buf;
+  }
+  function renderDrums() {
+    var jobs = [], lens = [0.9, 0.9, 0.6, 2.2];
+    for (var lane = 0; lane < 4; lane++) {
+      for (var v = 0; v < 3; v++) {
+        (function (lane) {
+          var off = offlineCtx(lens[lane], DRUM_RATE);
+          var out = off.createGain(); out.connect(off.destination);
+          var send = off.createGain(); send.gain.value = 0.12; out.connect(send); send.connect(addVerb(off, 0.5));
+          withCtx(off, out, function () { drum(lane, 0); });
+          jobs.push(renderCtx(off).then(function (b) { return [lane, fadeTail(b, 0.15)]; }));
+        })(lane);
+      }
+    }
+    return Promise.all(jobs).then(function (rs) {
+      var d = [[], [], [], []];
+      rs.forEach(function (r) { d[r[0]].push(r[1]); });
+      DRUMS = d;
+    }).catch(function () {});
+  }
+  function playDrum(lane) {
+    var ac = A.ac;
+    if (DRUMS) {
+      var set = DRUMS[lane];
+      var s = ac.createBufferSource();
+      s.buffer = set[drumRot[lane]++ % set.length];
+      s.connect(A.drums);
+      s.start(0);
+    } else {
+      drum(lane, ac.currentTime);
+    }
+  }
+
+  function renderSong(song) {
+    if (RENDERED[song.id]) return RENDERED[song.id];
+    RENDERED[song.id] = doRender(song);
+    RENDERED[song.id].catch(function () { delete RENDERED[song.id]; });
+    return RENDERED[song.id];
+  }
+  function doRender(song) {
+    var beat = 60 / song.bpm, lead = 0.25 + beat * 4;
+    var data = buildSong(song, lead);
+    var len = data.end + data.bar * 2.5 + 1;
+    var off = offlineCtx(len, SONG_RATE);
+    var verb = addVerb(off, 0.5), chain;
+    withCtx(off, off.destination, function () { chain = makeSongChain(off, off.destination, verb); });
+    var ev = data.ev, ptr = 0;
+    function feed(upTo) {
+      withCtx(off, off.destination, function () {
+        var pc = CUR; CUR = chain;
+        while (ptr < ev.length && ev[ptr].t < upTo) { var e = ev[ptr++]; e.f(Math.max(0, e.t)); }
+        CUR = pc;
+      });
+    }
+    var STEP = 4;
+    if (typeof off.suspend === 'function') {
+      feed(STEP + 1);
+      for (var t = STEP; t < len - 0.5; t += STEP) {
+        (function (t) {
+          off.suspend(t).then(function () { feed(t + STEP + 1); off.resume(); });
+        })(t);
+      }
+    } else {
+      feed(Infinity);
+    }
+    return renderCtx(off).then(function (buf) {
+      return { buf: buf, data: data, lead: lead };
+    });
+  }
+
+  function makeSongChain(ac, out, verbIn) {
+    var S = {};
     S.bus = ac.createGain(); S.bus.gain.value = 1;
-    S.bus.connect(A.bandFilter); S.bus.connect(A.bandSend);
+    S.bus.connect(out);
+    var send = ac.createGain(); send.gain.value = 0.28; S.bus.connect(send); send.connect(verbIn);
     S.gIn = ac.createGain();
-    var sh = ac.createWaveShaper(); sh.curve = A.curve; sh.oversample = '2x';
+    var sh = ac.createWaveShaper(); sh.curve = A.curve; sh.oversample = 'none';
     var lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000; lp.Q.value = 0.7;
     var pk = ac.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 1500; pk.gain.value = 3; pk.Q.value = 1;
     var gOut = ac.createGain(); gOut.gain.value = 0.15;
@@ -351,7 +456,6 @@
     S.keys = ac.createGain(); S.keys.gain.value = 1; S.keys.connect(S.bus);
     return S;
   }
-  var CUR = null;
 
   function env(g, t, a, d, peak, rel) {
     g.gain.setValueAtTime(0.0001, t);
@@ -360,13 +464,13 @@
     g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(a + 0.01, d) + rel);
   }
   function osc(type, f, t, end, dest, detune) {
-    var o = A.ac.createOscillator(); o.type = type; o.frequency.value = f;
+    var o = X.createOscillator(); o.type = type; o.frequency.value = f;
     if (detune) o.detune.value = detune;
     o.connect(dest); o.start(t); o.stop(end);
     return o;
   }
   function bass(t, m, dur) {
-    var ac = A.ac;
+    var ac = X;
     var f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 3;
     f.frequency.setValueAtTime(1100, t); f.frequency.exponentialRampToValueAtTime(260, t + dur);
     var g = ac.createGain(); env(g, t, 0.006, dur, 0.55, 0.06);
@@ -375,7 +479,7 @@
     osc('sine', hz(m), t, t + dur + 0.1, g);
   }
   function guitar(t, ms, dur, vol) {
-    var ac = A.ac;
+    var ac = X;
     ms.forEach(function (m) {
       [-7, 7].forEach(function (det) {
         var g = ac.createGain(); env(g, t, 0.004, dur, vol, 0.09); g.connect(CUR.gIn);
@@ -384,7 +488,7 @@
     });
   }
   function keys(t, ms, dur, vol, tone) {
-    var ac = A.ac;
+    var ac = X;
     ms.forEach(function (m) {
       var g = ac.createGain(); g.connect(CUR.keys);
       if (tone === 'piano') {
@@ -412,7 +516,7 @@
   }
   var VOWELS = { a: [800, 1150, 2900], o: [450, 800, 2830], e: [500, 1750, 2600] };
   function voice(t, m, dur, v) {
-    var ac = A.ac, f0 = hz(m);
+    var ac = X, f0 = hz(m);
     var o = ac.createOscillator(); o.type = 'sawtooth';
     o.frequency.setValueAtTime(f0 * 0.97, t); o.frequency.linearRampToValueAtTime(f0, t + 0.06);
     var lfo = ac.createOscillator(); lfo.frequency.value = 5.4;
@@ -426,19 +530,19 @@
   }
 
   function noiseHit(t, vol, dur, type, freq, q, dest) {
-    var ac = A.ac;
+    var ac = X;
     var s = ac.createBufferSource(); s.buffer = A.noise;
     var f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; if (q) f.Q.value = q;
     var g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(f); f.connect(g); g.connect(dest || A.drums);
+    s.connect(f); f.connect(g); g.connect(dest || DEST);
     s.start(t, Math.random() * 0.4); s.stop(t + dur + 0.02);
   }
   function tonal(type, f1, f2, t, dur, vol, dest) {
-    var ac = A.ac, o = ac.createOscillator(), g = ac.createGain();
+    var ac = X, o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur * 0.4);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(dest || A.drums); o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); g.connect(dest || DEST); o.start(t); o.stop(t + dur + 0.02);
   }
   function drum(lane, t) {
     if (lane === 0) {
@@ -462,7 +566,7 @@
     tonal('sine', accent ? 2200 : 1800, accent ? 2000 : 1600, t, 0.04, 0.3);
   }
   function crowdSound(t, kind) {
-    var ac = A.ac;
+    var ac = X;
     if (kind === 'boo') {
       var f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
       var g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.3);
@@ -480,7 +584,7 @@
       var gg = ac.createGain(); var dur = kind === 'big' ? 3.2 : 1.3, vol = kind === 'big' ? 0.5 : 0.22;
       gg.gain.setValueAtTime(0.0001, t); gg.gain.exponentialRampToValueAtTime(vol, t + 0.35);
       gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      s.connect(bp); bp.connect(gg); gg.connect(A.master); gg.connect(A.verb);
+      s.connect(bp); bp.connect(gg); gg.connect(A.master);
       s.start(t); s.stop(t + dur + 0.05);
       if (kind === 'big') {
         [0.3, 0.9, 1.5].forEach(function (d) {
@@ -655,20 +759,43 @@
 
   function now() { return A.ac ? A.ac.currentTime - lat() : 0; }
 
+  var loading = false;
+  function bestLabel(s) { return best[s.id] ? 'Best ' + best[s.id].toLocaleString() : ['Easy', 'Medium', 'Hard'][s.diff - 1]; }
+  function setLoading(song, on) {
+    var b = $('song-' + song.id);
+    if (b) { b.disabled = on; b.querySelector('.bs').textContent = on ? 'Tuning up…' : bestLabel(song); }
+    $('againBtn').disabled = on;
+    $('againBtn').textContent = on ? 'Tuning up…' : 'Play again';
+  }
   function startSong(song) {
-    if (!audioInit()) return;
-    if (G && G.S) retireChain(G.S);
-    CUR = makeSongChain();
-    A.bandFilter.frequency.cancelScheduledValues(A.ac.currentTime);
+    if (loading || !audioInit()) return;
+    if (!OAC) { $('bandName').textContent = 'This browser cannot play the band.'; return; }
+    loading = true;
+    if (!ready[song.id]) setLoading(song, true);
+    renderSong(song).then(function (r) {
+      loading = false; setLoading(song, false); begin(song, r);
+    }, function () {
+      loading = false; setLoading(song, false);
+      $('bandName').textContent = 'This browser could not prepare the music.';
+    });
+  }
+  function begin(song, r) {
+    if (G) stopBand(G);
+    var ac = A.ac, d = r.data;
+    A.bandFilter.frequency.cancelScheduledValues(ac.currentTime);
     A.bandFilter.frequency.value = 18000;
-    var beat = 60 / song.bpm;
-    var t0 = A.ac.currentTime + 0.5 + beat * 4;
-    var built = buildSong(song, t0);
+    var bs = ac.currentTime + 0.1;
+    var gain = ac.createGain(); gain.gain.value = 0.75; gain.connect(A.bandFilter);
+    var src = ac.createBufferSource(); src.buffer = r.buf; src.connect(gain); src.start(bs);
     G = {
-      song: song, S: CUR, t0: t0, beat: built.beat, six: built.six, bar: built.bar,
-      notes: built.notes, ev: built.ev, vox: built.vox, gHits: built.gHits, kHits: built.kHits,
-      sections: built.sections, end: built.end,
-      ptr: 0, missPtr: 0, lo: 0, gp: 0, kp: 0, vp: 0,
+      song: song, rec: r, src: src, gain: gain, bufStart: bs,
+      t0: r.lead + bs, beat: d.beat, six: d.six, bar: d.bar, end: d.end + bs,
+      notes: d.notes.map(function (n) { return { t: n.t + bs, lane: n.lane, judged: false, hit: false }; }),
+      vox: d.vox.map(function (v) { return { t: v.t + bs, d: v.d }; }),
+      gHits: d.gHits.map(function (t) { return t + bs; }),
+      kHits: d.kHits.map(function (t) { return t + bs; }),
+      sections: d.sections.map(function (s) { return { type: s.type, t: s.t + bs }; }),
+      missPtr: 0, lo: 0, gp: 0, kp: 0, vp: 0,
       score: 0, combo: 0, maxCombo: 0, mult: 1, crowd: 0.6, perfect: 0, good: 0, miss: 0,
       state: 'count', paused: false, holdUntil: 0, missFlash: -9, failAt: 0,
       good_w: song.diff === 1 ? 0.12 : 0.1, dmg: [0, 0.04, 0.05, 0.06][song.diff]
@@ -680,29 +807,18 @@
     $('pauseBtn').hidden = false;
     hud(true);
   }
-  function retireChain(S) {
+  function stopBand(g) {
     var t = A.ac.currentTime;
-    S.bus.gain.cancelScheduledValues(t);
-    S.bus.gain.setValueAtTime(S.bus.gain.value, t);
-    S.bus.gain.linearRampToValueAtTime(0, t + 0.4);
-    setTimeout(function () { try { S.bus.disconnect(); } catch (e) {} }, 800);
-  }
-
-  function schedule() {
-    if (!G || G.paused || G.state === 'fail' || G.state === 'done') return;
-    var ct = A.ac.currentTime, ev = G.ev;
-    var prev = CUR; CUR = G.S;
-    while (G.ptr < ev.length && ev[G.ptr].t < ct + 0.2) {
-      var e = ev[G.ptr++];
-      if (e.t >= ct - 0.03) e.f(Math.max(e.t, ct));
-    }
-    CUR = prev;
+    g.gain.gain.cancelScheduledValues(t);
+    g.gain.gain.setValueAtTime(g.gain.gain.value, t);
+    g.gain.gain.linearRampToValueAtTime(0, t + 0.4);
+    try { g.src.stop(t + 0.5); } catch (e) {}
   }
 
   function hitLane(lane) {
     if (!audioInit()) return;
     var ct = A.ac.currentTime;
-    drum(lane, ct);
+    playDrum(lane);
     var tt = ct - lat();
     lastHit[lane] = tt;
     flashPad(lane);
@@ -744,7 +860,7 @@
   }
   function fail(tt) {
     G.state = 'fail'; G.failAt = tt;
-    retireChain(G.S);
+    stopBand(G);
     crowdSound(A.ac.currentTime + 0.1, 'boo');
     setTimeout(function () { showResults(true); }, 2400);
   }
@@ -777,7 +893,11 @@
     if (!G || !G.paused) return;
     var shift = G.beat * 4;
     var ct = A.ac.currentTime;
-    for (var i = G.ptr; i < G.ev.length; i++) G.ev[i].t += shift;
+    var pos = ct - G.bufStart;
+    try { G.src.stop(); } catch (e) {}
+    var src = A.ac.createBufferSource(); src.buffer = G.rec.buf; src.connect(G.gain);
+    src.start(ct + shift, Math.max(0, pos));
+    G.src = src; G.bufStart += shift;
     G.notes.forEach(function (n) { if (!n.judged) n.t += shift; });
     G.vox.forEach(function (v) { if (v.t > ct - 1) v.t += shift; });
     for (var j = 0; j < G.gHits.length; j++) if (G.gHits[j] > ct - 0.05) G.gHits[j] += shift;
@@ -793,7 +913,7 @@
     A.ac.resume();
   }
   function quit() {
-    if (G && G.S) retireChain(G.S);
+    if (G) stopBand(G);
     if (A.ac && A.ac.state === 'suspended') A.ac.resume();
     G = null;
     showMenu();
@@ -831,10 +951,13 @@
         '</span><span>' + s.bpm + ' BPM</span><span class="bs"></span></span>';
       b.querySelector('.nm').textContent = s.name;
       b.querySelector('.by').textContent = s.band + ' · ' + s.genre;
-      b.querySelector('.bs').textContent = best[s.id] ? 'Best ' + best[s.id].toLocaleString() : ['Easy', 'Medium', 'Hard'][s.diff - 1];
+      b.querySelector('.bs').textContent = bestLabel(s);
       b.addEventListener('click', function () { startSong(s); });
       list.appendChild(b);
     });
+    var ms = reportedDelayMs(), li = $('latInfo');
+    li.hidden = !ms;
+    if (ms) li.textContent = 'Sound delay reported by this device: ' + ms + ' ms. Bluetooth headphones add a lot; the phone speaker or wired headphones are fastest.';
     $('songName').textContent = 'Backbeat';
     $('bandName').textContent = 'Pick a song to play';
     $('menu').hidden = false; $('results').hidden = true; $('pausePanel').hidden = true;
@@ -894,7 +1017,7 @@
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function resize() {
     var r = cv.getBoundingClientRect();
-    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    DPR = Math.min(window.devicePixelRatio || 1, 1.5);
     W = r.width; H = r.height;
     cv.width = Math.max(1, Math.round(W * DPR)); cv.height = Math.max(1, Math.round(H * DPR));
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1306,7 +1429,7 @@
   function frame(ts) {
     requestAnimationFrame(frame);
     var dt = Math.min(0.05, Math.max(0, (ts - lastFrame) / 1000)); lastFrame = ts;
-    if (G && A.ac) { schedule(); update(); }
+    if (G && A.ac) update();
     if (!W || !H) return;
     var tt = G && A.ac ? now() : ts / 1000;
     var bp = G ? (tt - G.t0) / G.beat : ts / 1000 * 1.5;
@@ -1319,8 +1442,17 @@
     drawHighway(tt, sh, H - sh, G && G.paused ? 0 : dt);
     ctx.restore();
   }
-  setInterval(function () { if (G && A.ac) { schedule(); update(); } }, 30);
+  setInterval(function () { if (G && A.ac) update(); }, 30);
 
+  var ready = {};
+  if (OAC) {
+    prepBuffers();
+    SONGS.reduce(function (p, s) {
+      return p.then(function () {
+        return renderSong(s).then(function () { ready[s.id] = true; });
+      }).catch(function () {});
+    }, renderDrums().catch(function () {}));
+  }
   showMenu();
   requestAnimationFrame(frame);
 })();
