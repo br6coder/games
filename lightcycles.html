@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Neon Cycles</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #02030a; color: #cfefff;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+  canvas#view { display: block; }
+  #hud { position: fixed; top: 12px; left: 14px; font-size: 14px; letter-spacing: 2px; text-shadow: 0 0 8px #00e5ff; pointer-events: none; }
+  #hud b { color: #fff; }
+  #boostWrap { margin-top: 8px; width: 160px; height: 8px; border: 1px solid #00e5ff88; border-radius: 4px; overflow: hidden; }
+  #boost { height: 100%; width: 100%; background: linear-gradient(90deg, #00a0ff, #00ffff); box-shadow: 0 0 10px #00e5ff; }
+  #minimap { position: fixed; right: 14px; top: 12px; width: 170px; height: 170px; border: 1px solid #00e5ff66;
+    background: #02060ecc; border-radius: 6px; pointer-events: none; }
+  #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column;
+    pointer-events: none; text-align: center; }
+  #big { font-size: 64px; font-weight: 800; letter-spacing: 10px; color: #fff; text-shadow: 0 0 18px #00e5ff, 0 0 40px #00e5ff; }
+  #sub { margin-top: 14px; font-size: 16px; letter-spacing: 3px; color: #9fdfff; line-height: 1.8; max-width: 92vw; }
+  #sub kbd { border: 1px solid #00e5ff88; border-radius: 4px; padding: 1px 6px; color: #fff; font-family: inherit; }
+  .touchhint { position: fixed; bottom: 0; height: 26vh; display: none; pointer-events: none; color: #00e5ff55;
+    font-size: 40px; align-items: center; justify-content: center; }
+  body.touch .touchhint { display: flex; }
+  #tl { left: 0; width: 33vw; } #tc { left: 33vw; width: 34vw; font-size: 16px; letter-spacing: 3px; } #tr { right: 0; width: 33vw; }
+  @media (max-width: 600px) {
+    #big { font-size: 38px; letter-spacing: 6px; }
+    #sub { font-size: 13px; }
+    #minimap { width: 110px; height: 110px; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">
+  <div>SPEED <b id="spd">0</b> &nbsp; RIDERS <b id="alive">4</b></div>
+  <div>ROUND <b id="round">1</b> &nbsp; WINS <b id="wins">0</b> &nbsp; LOSSES <b id="losses">0</b></div>
+  <div id="boostWrap"><div id="boost"></div></div>
+</div>
+<canvas id="minimap" width="340" height="340"></canvas>
+<div id="msg">
+  <div id="big">NEON CYCLES</div>
+  <div id="sub">
+    Outlast the other riders. Don't hit any wall.<br>
+    <kbd>←</kbd>/<kbd>A</kbd> turn left &nbsp; <kbd>→</kbd>/<kbd>D</kbd> turn right &nbsp; <kbd>Space</kbd>/<kbd>W</kbd> hold to boost<br>
+    <kbd>C</kbd> switch camera &nbsp; <kbd>M</kbd> mute<br>
+    Touch: tap left or right third to turn, hold the middle to boost<br><br>
+    <b>Press ENTER or tap to ride</b>
+  </div>
+</div>
+<div class="touchhint" id="tl">◀</div><div class="touchhint" id="tc">BOOST</div><div class="touchhint" id="tr">▶</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------- constants ----------
+const ARENA = 150;               // half-size of the square arena
+const WALL_H = 1.9, WALL_W = 0.1, HIT_W = 0.35;
+const BASE_SPEED = 28, BOOST_SPEED = 46;
+const STEP = 0.25;               // collision sub-step length
+const MAXSEG = 4096;
+const TRAIL_BACK = 2.0;          // trail appears from the rear of the bike
+const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // N E S W ; +1 = right turn
+const COLORS = [0x00e5ff, 0xff7a1a, 0xff2bd6, 0x8dff3a];
+const yawOf = d => Math.atan2(-DIRS[d][0], -DIRS[d][1]);
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.id = 'view';
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x02030a);
+scene.fog = new THREE.FogExp2(0x02030a, 0.0055);
+
+const camera = new THREE.PerspectiveCamera(78, innerWidth / innerHeight, 0.05, 1200);
+camera.rotation.order = 'YXZ';
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.95, 0.5, 0.14);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- environment ----------
+function gridTexture(major) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#02050c'; g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = major ? '#0b6f9c' : '#06324a'; g.lineWidth = major ? 4 : 3;
+  g.strokeRect(0, 0, 256, 256);
+  g.strokeStyle = '#041a28'; g.lineWidth = 1;
+  for (let i = 64; i < 256; i += 64) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 256); g.moveTo(0, i); g.lineTo(256, i); g.stroke(); }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+{
+  const tex = gridTexture(true);
+  const size = ARENA * 2;
+  tex.repeat.set(size / 10, size / 10);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: tex }));
+  floor.rotation.x = -Math.PI / 2; scene.add(floor);
+
+  const outTex = gridTexture(false);
+  const outSize = ARENA * 8;
+  outTex.repeat.set(outSize / 20, outSize / 20);
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(outSize, outSize),
+    new THREE.MeshBasicMaterial({ map: outTex, color: 0x557799 }));
+  outer.rotation.x = -Math.PI / 2; outer.position.y = -0.05; scene.add(outer);
+
+  // arena boundary
+  const wallMat = new THREE.MeshBasicMaterial({ color: 0x1a4dff, transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x66a8ff });
+  const H = 6;
+  for (let i = 0; i < 4; i++) {
+    const horiz = i < 2, s = i % 2 ? 1 : -1;
+    const w = new THREE.Mesh(new THREE.BoxGeometry(horiz ? size : 0.3, H, horiz ? 0.3 : size), wallMat);
+    w.position.set(horiz ? 0 : s * ARENA, H / 2, horiz ? s * ARENA : 0); scene.add(w);
+    const e = new THREE.Mesh(new THREE.BoxGeometry(horiz ? size + 0.6 : 0.4, 0.25, horiz ? 0.4 : size + 0.6), edgeMat);
+    e.position.set(w.position.x, H, w.position.z); scene.add(e);
+    const b = e.clone(); b.position.y = 0.08; scene.add(b);
+  }
+
+  // distant towers for parallax and a sense of speed
+  const towerGeo = new THREE.BoxGeometry(1, 1, 1);
+  const towerMat = new THREE.MeshBasicMaterial({ color: 0x0a1830 });
+  const towerEdge = new THREE.MeshBasicMaterial({ color: 0x2a7fff });
+  const N = 90;
+  const towers = new THREE.InstancedMesh(towerGeo, towerMat, N);
+  const tops = new THREE.InstancedMesh(towerGeo, towerEdge, N);
+  const d = new THREE.Object3D();
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 + Math.random() * 0.05;
+    const r = ARENA * (1.6 + Math.random() * 1.4);
+    const h = 15 + Math.random() * 70, w = 6 + Math.random() * 14;
+    d.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r); d.scale.set(w, h, w); d.rotation.y = a; d.updateMatrix();
+    towers.setMatrixAt(i, d.matrix);
+    d.position.y = h; d.scale.set(w + 0.4, 0.6, w + 0.4); d.updateMatrix();
+    tops.setMatrixAt(i, d.matrix);
+  }
+  scene.add(towers, tops);
+}
+
+// ---------- bikes ----------
+const unitBox = new THREE.BoxGeometry(1, 1, 1);
+const dummy = new THREE.Object3D();
+
+function makeBikeMesh(color) {
+  const g = new THREE.Group();
+  const dark = new THREE.MeshBasicMaterial({ color: 0x05070c });
+  const glow = new THREE.MeshBasicMaterial({ color });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.55, 2.3), dark); body.position.y = 0.7; g.add(body);
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 1.1), dark); canopy.position.set(0, 1.05, 0.1); g.add(canopy);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.06, 2.34), glow); stripe.position.y = 0.92; g.add(stripe);
+  const stripe2 = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.05, 1.14), glow); stripe2.position.set(0, 1.2, 0.1); g.add(stripe2);
+  const wheels = [];
+  for (const z of [-0.95, 0.95]) {
+    const w = new THREE.Group(); w.position.set(0, 0.5, z);
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.09, 8, 28), glow); tire.rotation.y = Math.PI / 2;
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.5, 20), dark); hub.rotation.z = Math.PI / 2;
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.06, 0.6), glow);
+    w.add(tire, hub, spoke); g.add(w); wheels.push(w);
+  }
+  g.userData.wheels = wheels;
+  return g;
+}
+
+class Bike {
+  constructor(i) {
+    this.i = i; this.isPlayer = i === 0; this.color = COLORS[i];
+    this.mesh = makeBikeMesh(this.color); scene.add(this.mesh);
+    this.wallMat = new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.45,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    this.edgeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(this.color).lerp(new THREE.Color(0xffffff), 0.45), transparent: true });
+    this.walls = new THREE.InstancedMesh(unitBox, this.wallMat, MAXSEG);
+    this.edges = new THREE.InstancedMesh(unitBox, this.edgeMat, MAXSEG);
+    this.walls.frustumCulled = this.edges.frustumCulled = false;
+    scene.add(this.walls, this.edges);
+    this.reaction = 0.3 + Math.random() * 0.2;
+  }
+  reset(x, z, dir) {
+    Object.assign(this, { x, z, dir, alive: true, solid: true, fade: 1, speed: BASE_SPEED, energy: 1,
+      boosting: false, turnCd: 0, think: 0, yaw: yawOf(dir), wheelRot: 0 });
+    this.segs = [{ x0: x, z0: z, x1: x, z1: z }];
+    this.mesh.visible = true; this.walls.visible = this.edges.visible = true;
+    this.wallMat.opacity = 0.45; this.edgeMat.opacity = 1;
+    this.walls.count = this.edges.count = 0;
+  }
+  turn(d) {
+    if (!this.alive || this.turnCd > 0 || this.segs.length >= MAXSEG) return false;
+    this.writeInstance(this.segs.length - 1, false); // finalize full-length segment
+    this.dir = (this.dir + d + 4) % 4;
+    this.segs.push({ x0: this.x, z0: this.z, x1: this.x, z1: this.z });
+    this.turnCd = 0.07;
+    return true;
+  }
+  writeInstance(k, isCurrent) {
+    const s = this.segs[k];
+    let x1 = s.x1, z1 = s.z1;
+    if (isCurrent && this.alive) {           // pull the visible end back to the bike's rear
+      const [dx, dz] = DIRS[this.dir];
+      const len = Math.abs(s.x1 - s.x0) + Math.abs(s.z1 - s.z0);
+      const back = Math.min(TRAIL_BACK, len);
+      x1 -= dx * back; z1 -= dz * back;
+    }
+    const lx = Math.abs(x1 - s.x0) + WALL_W, lz = Math.abs(z1 - s.z0) + WALL_W;
+    const cx = (s.x0 + x1) / 2, cz = (s.z0 + z1) / 2;
+    dummy.rotation.set(0, 0, 0);
+    dummy.position.set(cx, WALL_H / 2, cz); dummy.scale.set(lx, WALL_H, lz); dummy.updateMatrix();
+    this.walls.setMatrixAt(k, dummy.matrix);
+    dummy.position.y = WALL_H; dummy.scale.set(lx + 0.03, 0.09, lz + 0.03); dummy.updateMatrix();
+    this.edges.setMatrixAt(k, dummy.matrix);
+  }
+  syncTrail() {
+    const n = this.segs.length;
+    this.writeInstance(n - 1, true);
+    this.walls.count = this.edges.count = n;
+    this.walls.instanceMatrix.needsUpdate = this.edges.instanceMatrix.needsUpdate = true;
+  }
+}
+
+const bikes = COLORS.map((_, i) => new Bike(i));
+const player = bikes[0];
+
+// ---------- collision & sensing ----------
+function hits(x, z, self) {
+  if (x < -ARENA + 0.4 || x > ARENA - 0.4 || z < -ARENA + 0.4 || z > ARENA - 0.4) return true;
+  for (const b of bikes) {
+    if (!b.solid) continue;
+    const segs = b.segs, skip = b === self ? segs.length - 2 : Infinity;
+    for (let k = 0; k < segs.length; k++) {
+      if (k >= skip) continue;
+      const s = segs[k];
+      if (x >= Math.min(s.x0, s.x1) - HIT_W && x <= Math.max(s.x0, s.x1) + HIT_W &&
+          z >= Math.min(s.z0, s.z1) - HIT_W && z <= Math.max(s.z0, s.z1) + HIT_W) return true;
+    }
+  }
+  return false;
+}
+
+// distance along direction d until the bike would hit something
+function freeDist(self, d, max = 400) {
+  const [dx, dz] = DIRS[d], x = self.x, z = self.z;
+  let best = max;
+  if (dx > 0) best = Math.min(best, ARENA - x); else if (dx < 0) best = Math.min(best, x + ARENA);
+  if (dz > 0) best = Math.min(best, ARENA - z); else if (dz < 0) best = Math.min(best, z + ARENA);
+  for (const b of bikes) {
+    if (!b.solid) continue;
+    const segs = b.segs, skip = b === self ? segs.length - 2 : Infinity;
+    for (let k = 0; k < segs.length; k++) {
+      if (k >= skip) continue;
+      const s = segs[k];
+      const xmin = Math.min(s.x0, s.x1) - HIT_W, xmax = Math.max(s.x0, s.x1) + HIT_W;
+      const zmin = Math.min(s.z0, s.z1) - HIT_W, zmax = Math.max(s.z0, s.z1) + HIT_W;
+      let dist;
+      if (dx !== 0) { if (z < zmin || z > zmax) continue; dist = dx > 0 ? xmin - x : x - xmax; }
+      else { if (x < xmin || x > xmax) continue; dist = dz > 0 ? zmin - z : z - zmax; }
+      if (dist >= -0.01 && dist < best) best = dist;
+    }
+  }
+  return Math.max(0, best);
+}
+
+function aiThink(b, dt) {
+  b.think -= dt;
+  if (b.think > 0) return;
+  b.think = 0.04 + Math.random() * 0.05;
+  const ahead = freeDist(b, b.dir), left = freeDist(b, (b.dir + 3) % 4), right = freeDist(b, (b.dir + 1) % 4);
+  const danger = b.speed * b.reaction + 2.5;
+  const side = left > right ? -1 : 1, sideDist = Math.max(left, right);
+  if (ahead < danger) {
+    if (sideDist > ahead) b.turn(side);
+  } else if (Math.random() < 0.012 && sideDist > 25) {
+    b.turn(Math.random() < 0.7 ? side : -side);
+  } else if (player.alive && Math.random() < 0.02) {
+    // aggression: try to swing in front of the player
+    const px = player.x - b.x, pz = player.z - b.z;
+    const [dx, dz] = DIRS[b.dir];
+    const along = px * dx + pz * dz, cross = px * -dz + pz * dx; // cross>0 => player is to the right
+    if (along > 10 && Math.abs(cross) > 8 && Math.abs(cross) < 40) {
+      const s = cross > 0 ? 1 : -1;
+      if ((s > 0 ? right : left) > 30) b.turn(s);
+    }
+  }
+  b.boosting = ahead > 60 && b.energy > 0.4 && Math.random() < 0.5 ? true : (b.boosting && ahead > 40 && b.energy > 0.05);
+}
+
+// ---------- effects ----------
+const bursts = [];
+function explode(x, z, color) {
+  const N = 260, pos = new Float32Array(N * 3), vel = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    pos[i * 3] = x; pos[i * 3 + 1] = 0.8; pos[i * 3 + 2] = z;
+    const a = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, sp = 4 + Math.random() * 14;
+    const r = Math.sqrt(1 - u * u);
+    vel[i * 3] = Math.cos(a) * r * sp; vel[i * 3 + 1] = Math.abs(u) * sp * 0.8 + 2; vel[i * 3 + 2] = Math.sin(a) * r * sp;
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color, size: 0.35, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; scene.add(pts);
+  bursts.push({ pts, vel, life: 1.6 });
+}
+function updateBursts(dt) {
+  for (let j = bursts.length - 1; j >= 0; j--) {
+    const b = bursts[j]; b.life -= dt;
+    const p = b.pts.geometry.attributes.position.array;
+    for (let i = 0; i < p.length; i += 3) {
+      b.vel[i + 1] -= 18 * dt;
+      p[i] += b.vel[i] * dt; p[i + 1] += b.vel[i + 1] * dt; p[i + 2] += b.vel[i + 2] * dt;
+      if (p[i + 1] < 0.02) { p[i + 1] = 0.02; b.vel[i + 1] *= -0.4; b.vel[i] *= 0.8; b.vel[i + 2] *= 0.8; }
+    }
+    b.pts.geometry.attributes.position.needsUpdate = true;
+    b.pts.material.opacity = Math.max(0, b.life / 1.6);
+    if (b.life <= 0) { scene.remove(b.pts); b.pts.geometry.dispose(); b.pts.material.dispose(); bursts.splice(j, 1); }
+  }
+}
+
+// ---------- audio ----------
+let actx = null, master, engOsc, engOsc2, engFilter, muted = false;
+function initAudio() {
+  if (actx) { actx.resume(); return; }
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+  master = actx.createGain(); master.gain.value = 0.5; master.connect(actx.destination);
+  engFilter = actx.createBiquadFilter(); engFilter.type = 'lowpass'; engFilter.frequency.value = 600; engFilter.Q.value = 6;
+  const eg = actx.createGain(); eg.gain.value = 0.08;
+  engOsc = actx.createOscillator(); engOsc.type = 'sawtooth'; engOsc.frequency.value = 60;
+  engOsc2 = actx.createOscillator(); engOsc2.type = 'square'; engOsc2.frequency.value = 60.7;
+  const g2 = actx.createGain(); g2.gain.value = 0.4;
+  engOsc.connect(engFilter); engOsc2.connect(g2).connect(engFilter); engFilter.connect(eg).connect(master);
+  engOsc.start(); engOsc2.start();
+}
+function setEngine(speed, on) {
+  if (!actx) return;
+  const t = actx.currentTime, f = on ? 38 + speed * 2.1 : 20;
+  engOsc.frequency.setTargetAtTime(f, t, 0.08);
+  engOsc2.frequency.setTargetAtTime(f * 1.005, t, 0.08);
+  engFilter.frequency.setTargetAtTime(on ? 300 + speed * 25 : 80, t, 0.1);
+}
+function blip(freq, dur = 0.08, type = 'square', vol = 0.12) {
+  if (!actx) return;
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 1.6, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.02);
+}
+function boom(vol = 0.6) {
+  if (!actx) return;
+  const t = actx.currentTime, len = actx.sampleRate * 0.9, buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+  const s = actx.createBufferSource(); s.buffer = buf;
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(3000, t); f.frequency.exponentialRampToValueAtTime(120, t + 0.8);
+  const g = actx.createGain(); g.gain.value = vol;
+  s.connect(f).connect(g).connect(master); s.start(t);
+}
+
+// ---------- game state ----------
+const $ = id => document.getElementById(id);
+const msg = $('msg'), big = $('big'), sub = $('sub');
+let state = 'menu', stateT = 0, round = 1, wins = 0, losses = 0;
+let camMode = 'fp', camYaw = 0, camRoll = 0, deathCam = 0;
+let boostHeld = false;
+
+function startRound() {
+  initAudio();
+  const r = ARENA * 0.6;
+  player.reset(0, r, 0);
+  bikes[1].reset(0, -r, 2);
+  bikes[2].reset(-r, 0, 1);
+  bikes[3].reset(r, 0, 3);
+  for (const b of bikes) { b.syncTrail(); b.mesh.position.set(b.x, 0, b.z); b.mesh.rotation.set(0, b.yaw, 0); }
+  camYaw = player.yaw; camRoll = 0; deathCam = 0;
+  state = 'countdown'; stateT = 3;
+  sub.innerHTML = '';
+  msg.style.display = 'flex';
+  $('round').textContent = round;
+}
+
+function crash(b) {
+  b.alive = false; b.boosting = false;
+  b.syncTrail();
+  b.mesh.visible = false;
+  explode(b.x, b.z, b.color);
+  boom(b.isPlayer ? 0.8 : 0.35);
+}
+
+function endRound(won) {
+  state = 'over'; stateT = 0;
+  if (won) wins++; else losses++;
+  round++;
+  $('wins').textContent = wins; $('losses').textContent = losses;
+  msg.style.display = 'flex';
+  big.textContent = won ? 'VICTORY' : 'CRASHED';
+  big.style.textShadow = won ? '0 0 18px #8dff3a, 0 0 40px #8dff3a' : '0 0 18px #ff2b4a, 0 0 40px #ff2b4a';
+  sub.innerHTML = '<b>Press ENTER or tap to ride again</b>';
+  if (won) { blip(523, 0.15, 'triangle', 0.2); setTimeout(() => blip(784, 0.3, 'triangle', 0.2), 150); }
+}
+
+// ---------- input ----------
+function onTurn(d) {
+  if (state !== 'play') return;
+  if (player.turn(d)) blip(d > 0 ? 330 : 280, 0.05, 'square', 0.06);
+}
+function onStart() {
+  if (state === 'menu' || (state === 'over' && stateT > 0.6)) startRound();
+}
+addEventListener('keydown', e => {
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
+  if (e.repeat) return;
+  switch (e.code) {
+    case 'ArrowLeft': case 'KeyA': onTurn(-1); break;
+    case 'ArrowRight': case 'KeyD': onTurn(1); break;
+    case 'Space': case 'KeyW': case 'ArrowUp': case 'ShiftLeft': boostHeld = true; break;
+    case 'KeyC': camMode = camMode === 'fp' ? 'chase' : 'fp'; break;
+    case 'KeyM': muted = !muted; if (master) master.gain.value = muted ? 0 : 0.5; break;
+    case 'Enter': onStart(); break;
+  }
+});
+addEventListener('keyup', e => {
+  if (['Space', 'KeyW', 'ArrowUp', 'ShiftLeft'].includes(e.code)) boostHeld = false;
+});
+const boostTouches = new Set();
+addEventListener('touchstart', e => {
+  document.body.classList.add('touch');
+  e.preventDefault();
+  if (state === 'menu' || state === 'over') { onStart(); return; }
+  for (const t of e.changedTouches) {
+    const third = t.clientX / innerWidth;
+    if (third < 1 / 3) onTurn(-1);
+    else if (third > 2 / 3) onTurn(1);
+    else boostTouches.add(t.identifier);
+  }
+  boostHeld = boostTouches.size > 0;
+}, { passive: false });
+const endTouch = e => { for (const t of e.changedTouches) boostTouches.delete(t.identifier); boostHeld = boostTouches.size > 0; };
+addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
+addEventListener('mousedown', e => { if (e.button === 0) onStart(); });
+
+// ---------- minimap ----------
+const mm = $('minimap'), mctx = mm.getContext('2d');
+function drawMinimap() {
+  const S = mm.width, k = S / (ARENA * 2), tx = v => (v + ARENA) * k;
+  mctx.clearRect(0, 0, S, S);
+  mctx.lineWidth = 2;
+  for (const b of bikes) {
+    if (!b.solid) continue;
+    mctx.globalAlpha = b.fade;
+    mctx.strokeStyle = '#' + b.color.toString(16).padStart(6, '0');
+    mctx.beginPath();
+    for (const s of b.segs) { mctx.moveTo(tx(s.x0), tx(s.z0)); mctx.lineTo(tx(s.x1), tx(s.z1)); }
+    mctx.stroke();
+  }
+  mctx.globalAlpha = 1;
+  for (const b of bikes) {
+    if (!b.alive) continue;
+    mctx.fillStyle = b.isPlayer ? '#ffffff' : '#' + b.color.toString(16).padStart(6, '0');
+    mctx.beginPath(); mctx.arc(tx(b.x), tx(b.z), b.isPlayer ? 6 : 4.5, 0, Math.PI * 2); mctx.fill();
+  }
+}
+
+// ---------- main loop ----------
+const clock = new THREE.Clock();
+const angDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+
+function update(dt) {
+  stateT += state === 'countdown' ? -dt : dt;
+
+  if (state === 'countdown') {
+    const n = Math.ceil(stateT);
+    if (n > 0 && big.textContent !== String(n)) { big.textContent = n; big.style.textShadow = ''; blip(440, 0.12, 'triangle', 0.15); }
+    if (stateT <= 0) { state = 'play'; stateT = 0; big.textContent = 'GO'; blip(880, 0.25, 'triangle', 0.18); setTimeout(() => { if (state === 'play') msg.style.display = 'none'; }, 500); }
+  }
+
+  if (state === 'play' || state === 'over') {
+    for (const b of bikes) {
+      if (!b.alive) continue;
+      b.turnCd -= dt;
+      if (!b.isPlayer) aiThink(b, dt); else b.boosting = boostHeld && b.energy > 0.02;
+      if (b.boosting) b.energy = Math.max(0, b.energy - 0.4 * dt); else b.energy = Math.min(1, b.energy + 0.12 * dt);
+      const target = b.boosting ? BOOST_SPEED : BASE_SPEED;
+      b.speed += (target - b.speed) * Math.min(1, dt * 3);
+
+      let dist = b.speed * dt;
+      const [dx, dz] = DIRS[b.dir], seg = b.segs[b.segs.length - 1];
+      while (dist > 0) {
+        const s = Math.min(STEP, dist); dist -= s;
+        b.x += dx * s; b.z += dz * s;
+        seg.x1 = b.x; seg.z1 = b.z;
+        if (hits(b.x, b.z, b)) { crash(b); break; }
+      }
+    }
+    // fade out trails of crashed riders, then remove them from the arena
+    for (const b of bikes) {
+      if (!b.alive && b.solid) {
+        b.fade -= dt * 0.8;
+        b.wallMat.opacity = 0.45 * Math.max(0, b.fade); b.edgeMat.opacity = Math.max(0, b.fade);
+        if (b.fade <= 0) { b.solid = false; b.walls.visible = b.edges.visible = false; }
+      }
+      if (b.alive || b.solid) b.syncTrail();
+    }
+    if (state === 'play') {
+      const aiAlive = bikes.filter(b => !b.isPlayer && b.alive).length;
+      if (!player.alive) endRound(false);
+      else if (aiAlive === 0) endRound(true);
+    }
+  }
+
+  // bike meshes
+  for (const b of bikes) {
+    if (!b.alive) continue;
+    const target = yawOf(b.dir);
+    b.yaw += angDiff(b.yaw, target) * Math.min(1, dt * 18);
+    const [dx, dz] = DIRS[b.dir];
+    const off = 0.4 - 1.15; // logical point sits near the front of the model
+    b.mesh.position.set(b.x + dx * off, 0, b.z + dz * off);
+    b.mesh.rotation.set(0, b.yaw, angDiff(b.yaw, target) * 0.6);
+    b.wheelRot -= b.speed * dt / 0.45;
+    for (const w of b.mesh.userData.wheels) w.rotation.x = b.wheelRot;
+  }
+  player.mesh.visible = player.alive && camMode !== 'fp';
+
+  updateBursts(dt);
+  updateCamera(dt);
+
+  // HUD
+  $('spd').textContent = Math.round(player.alive ? player.speed * 7.2 : 0);
+  $('alive').textContent = bikes.filter(b => b.alive).length;
+  $('boost').style.width = (player.energy * 100).toFixed(0) + '%';
+  setEngine(player.speed, player.alive && (state === 'play' || state === 'over' || state === 'countdown'));
+  drawMinimap();
+}
+
+function updateCamera(dt) {
+  if (state === 'menu') {
+    const t = performance.now() / 1000 * 0.08;
+    camera.position.set(Math.cos(t) * ARENA * 0.9, 28, Math.sin(t) * ARENA * 0.9);
+    camera.lookAt(0, 0, 0);
+    camera.fov = 70; camera.updateProjectionMatrix();
+    return;
+  }
+  const targetYaw = player.alive ? yawOf(player.dir) : camYaw;
+  const diff = angDiff(camYaw, targetYaw);
+  camYaw += diff * Math.min(1, dt * 11);
+  camRoll += (-diff * 0.22 - camRoll) * Math.min(1, dt * 10);
+  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+
+  if (!player.alive) {
+    deathCam += dt;
+    const a = camYaw + deathCam * 0.4, r = 10 + deathCam * 3;
+    camera.position.set(player.x + Math.sin(a) * r, 4 + deathCam * 1.5, player.z + Math.cos(a) * r);
+    camera.lookAt(player.x, 0.8, player.z);
+  } else if (camMode === 'fp') {
+    camera.position.set(player.x - fx * 0.6, 1.25, player.z - fz * 0.6);
+    camera.rotation.set(-0.04, camYaw, camRoll);
+  } else {
+    camera.position.set(player.x - fx * 11, 6.5, player.z - fz * 11);
+    camera.lookAt(player.x + fx * 10, 0.5, player.z + fz * 10);
+    camera.rotateZ(camRoll * 0.5);
+  }
+  const boostAmt = (player.speed - BASE_SPEED) / (BOOST_SPEED - BASE_SPEED);
+  const fov = (camMode === 'fp' ? 80 : 70) + Math.max(0, boostAmt) * 14;
+  if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+}
+
+// set up a demo arena for the title screen
+{
+  const r = ARENA * 0.6;
+  player.reset(0, r, 0); bikes[1].reset(0, -r, 2); bikes[2].reset(-r, 0, 1); bikes[3].reset(r, 0, 3);
+  for (const b of bikes) b.syncTrail();
+}
+
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  update(dt);
+  composer.render();
+});
+</script>
+</body>
+</html>
