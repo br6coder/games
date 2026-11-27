@@ -85,7 +85,9 @@ const yawOf = d => Math.atan2(-DIRS[d][0], -DIRS[d][1]);
 
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+const lowPower = matchMedia('(pointer: coarse)').matches; // tablets and phones start lighter
+let pixelRatio = Math.min(devicePixelRatio, lowPower ? 1.25 : 1.75);
+renderer.setPixelRatio(pixelRatio);
 renderer.setSize(innerWidth, innerHeight);
 renderer.domElement.id = 'view';
 document.body.prepend(renderer.domElement);
@@ -612,10 +614,26 @@ function updateCamera(dt) {
 
 window.ncReady = true;
 $('startline').textContent = document.body.classList.contains('touch') ? 'Tap anywhere to ride' : 'Press ENTER or tap to ride';
+// Adaptive quality: if frames are slow, first lower the resolution, then turn off the glow.
+let useBloom = true, perfT = 0, perfFrames = 0, perfLevel = 0;
+function tunePerformance(rawDt) {
+  perfT += rawDt; perfFrames++;
+  if (perfT < 2) return;
+  const fps = perfFrames / perfT; perfT = 0; perfFrames = 0;
+  if (fps > 45 || perfLevel >= 3) return;
+  perfLevel++;
+  if (perfLevel === 1) pixelRatio = Math.min(pixelRatio, 1);
+  else if (perfLevel === 2) useBloom = false;
+  else pixelRatio = 0.75;
+  renderer.setPixelRatio(pixelRatio); composer.setPixelRatio(pixelRatio);
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+}
+
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const raw = clock.getDelta(), dt = Math.min(raw, 0.05);
   update(dt);
-  composer.render();
+  if (useBloom) composer.render(); else renderer.render(scene, camera);
+  tunePerformance(raw);
 });
 </script>
 </body>
