@@ -19,9 +19,14 @@
   #big { font-size: 64px; font-weight: 800; letter-spacing: 10px; color: #fff; text-shadow: 0 0 18px #00e5ff, 0 0 40px #00e5ff; }
   #sub { margin-top: 14px; font-size: 16px; letter-spacing: 3px; color: #9fdfff; line-height: 1.8; max-width: 92vw; }
   #sub kbd { border: 1px solid #00e5ff88; border-radius: 4px; padding: 1px 6px; color: #fff; font-family: inherit; }
-  .touchhint { position: fixed; bottom: 0; height: 26vh; display: none; pointer-events: none; color: #00e5ff55;
-    font-size: 40px; align-items: center; justify-content: center; }
+  .touchhint { position: fixed; bottom: 0; height: 22vh; display: none; pointer-events: none; color: #bff6ff;
+    font-size: 34px; align-items: center; justify-content: center; box-sizing: border-box;
+    border: 1px solid #00e5ff44; background: #00e5ff0f; text-shadow: 0 0 10px #00e5ff; }
+  .touchhint.on { background: #00e5ff33; }
   body.touch .touchhint { display: flex; }
+  #sub .tapline { display: none; }
+  body.touch #sub .keyline { display: none; }
+  body.touch #sub .tapline { display: inline; }
   #tl { left: 0; width: 33vw; } #tc { left: 33vw; width: 34vw; font-size: 16px; letter-spacing: 3px; } #tr { right: 0; width: 33vw; }
   @media (max-width: 600px) {
     #big { font-size: 38px; letter-spacing: 6px; }
@@ -29,12 +34,6 @@
     #minimap { width: 110px; height: 110px; }
   }
 </style>
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-} }
-</script>
 </head>
 <body>
 <div id="hud">
@@ -47,20 +46,31 @@
   <div id="big">NEON CYCLES</div>
   <div id="sub">
     Outlast the other riders. Don't hit any wall.<br>
-    <kbd>←</kbd>/<kbd>A</kbd> turn left &nbsp; <kbd>→</kbd>/<kbd>D</kbd> turn right &nbsp; <kbd>Space</kbd>/<kbd>W</kbd> hold to boost<br>
-    <kbd>C</kbd> switch camera &nbsp; <kbd>M</kbd> mute<br>
-    Touch: tap left or right third to turn, hold the middle to boost<br><br>
-    <b>Press ENTER or tap to ride</b>
+    <span class="keyline"><kbd>←</kbd>/<kbd>A</kbd> turn left &nbsp; <kbd>→</kbd>/<kbd>D</kbd> turn right &nbsp; <kbd>Space</kbd>/<kbd>W</kbd> hold to boost<br>
+    <kbd>C</kbd> switch camera &nbsp; <kbd>M</kbd> mute<br></span>
+    <span class="tapline">Tap ◀ or ▶ to turn, hold BOOST to speed up<br></span><br>
+    <b id="startline">Loading the 3D engine…</b>
   </div>
 </div>
 <div class="touchhint" id="tl">◀</div><div class="touchhint" id="tc">BOOST</div><div class="touchhint" id="tr">▶</div>
 
+<script>
+  // Show why the game failed instead of a silent, dead screen.
+  function ncFail(text) {
+    const b = document.getElementById('startline');
+    if (b && !window.ncReady) b.innerHTML = '<span style="color:#ff6b7f">The game could not start: ' + text + '</span>';
+  }
+  addEventListener('error', e => ncFail(e.message || 'a file failed to load'), true);
+  addEventListener('unhandledrejection', e => ncFail(String(e.reason && e.reason.message || e.reason)));
+  if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) document.body.classList.add('touch');
+  setTimeout(() => { if (!window.ncReady) ncFail('the 3D engine (Three.js) did not load. Check your internet connection and reload.'); }, 12000);
+</script>
 <script type="module">
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/+esm';
+import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js/+esm';
+import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js/+esm';
+import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js/+esm';
+import { OutputPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/OutputPass.js/+esm';
 
 // ---------- constants ----------
 const ARENA = 150;               // half-size of the square arena
@@ -223,7 +233,11 @@ class Bike {
       const back = Math.min(TRAIL_BACK, len);
       x1 -= dx * back; z1 -= dz * back;
     }
-    const lx = Math.abs(x1 - s.x0) + WALL_W, lz = Math.abs(z1 - s.z0) + WALL_W;
+    let lx = Math.abs(x1 - s.x0) + WALL_W, lz = Math.abs(z1 - s.z0) + WALL_W;
+    if (isCurrent && this.alive) {
+      const len = Math.abs(s.x1 - s.x0) + Math.abs(s.z1 - s.z0);
+      if (len <= TRAIL_BACK) lx = lz = 0;              // still under the bike: draw nothing yet
+    }
     const cx = (s.x0 + x1) / 2, cz = (s.z0 + z1) / 2;
     dummy.rotation.set(0, 0, 0);
     dummy.position.set(cx, WALL_H / 2, cz); dummy.scale.set(lx, WALL_H, lz); dummy.updateMatrix();
@@ -384,10 +398,11 @@ let boostHeld = false;
 function startRound() {
   initAudio();
   const r = ARENA * 0.6;
-  player.reset(0, r, 0);
-  bikes[1].reset(0, -r, 2);
-  bikes[2].reset(-r, 0, 1);
-  bikes[3].reset(r, 0, 3);
+  // start mid-cell (grid lines are every 10 units) so riders don't sit on a floor line
+  player.reset(5, r, 0);
+  bikes[1].reset(-5, -r, 2);
+  bikes[2].reset(-r, 5, 1);
+  bikes[3].reset(r, -5, 3);
   for (const b of bikes) { b.syncTrail(); b.mesh.position.set(b.x, 0, b.z); b.mesh.rotation.set(0, b.yaw, 0); }
   camYaw = player.yaw; camRoll = 0; deathCam = 0;
   state = 'countdown'; stateT = 3;
@@ -412,7 +427,7 @@ function endRound(won) {
   msg.style.display = 'flex';
   big.textContent = won ? 'VICTORY' : 'CRASHED';
   big.style.textShadow = won ? '0 0 18px #8dff3a, 0 0 40px #8dff3a' : '0 0 18px #ff2b4a, 0 0 40px #ff2b4a';
-  sub.innerHTML = '<b>Press ENTER or tap to ride again</b>';
+  sub.innerHTML = '<b>' + (document.body.classList.contains('touch') ? 'Tap to ride again' : 'Press ENTER or tap to ride again') + '</b>';
   if (won) { blip(523, 0.15, 'triangle', 0.2); setTimeout(() => blip(784, 0.3, 'triangle', 0.2), 150); }
 }
 
@@ -439,22 +454,27 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => {
   if (['Space', 'KeyW', 'ArrowUp', 'ShiftLeft'].includes(e.code)) boostHeld = false;
 });
-const boostTouches = new Set();
-addEventListener('touchstart', e => {
-  document.body.classList.add('touch');
+const boostPointers = new Set();
+const hintL = $('tl'), hintC = $('tc'), hintR = $('tr');
+function flash(el) { el.classList.add('on'); setTimeout(() => el.classList.remove('on'), 120); }
+addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse') document.body.classList.add('touch');
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
   if (state === 'menu' || state === 'over') { onStart(); return; }
-  for (const t of e.changedTouches) {
-    const third = t.clientX / innerWidth;
-    if (third < 1 / 3) onTurn(-1);
-    else if (third > 2 / 3) onTurn(1);
-    else boostTouches.add(t.identifier);
-  }
-  boostHeld = boostTouches.size > 0;
+  if (e.pointerType === 'mouse') return;           // mouse only starts rounds; keys steer
+  const third = e.clientX / innerWidth;
+  if (third < 1 / 3) { onTurn(-1); flash(hintL); }
+  else if (third > 2 / 3) { onTurn(1); flash(hintR); }
+  else { boostPointers.add(e.pointerId); hintC.classList.add('on'); boostHeld = true; }
 }, { passive: false });
-const endTouch = e => { for (const t of e.changedTouches) boostTouches.delete(t.identifier); boostHeld = boostTouches.size > 0; };
-addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
-addEventListener('mousedown', e => { if (e.button === 0) onStart(); });
+const endPointer = e => {
+  if (!boostPointers.delete(e.pointerId)) return;
+  boostHeld = boostPointers.size > 0;
+  if (!boostHeld) hintC.classList.remove('on');
+};
+addEventListener('pointerup', endPointer); addEventListener('pointercancel', endPointer);
+addEventListener('touchstart', e => e.preventDefault(), { passive: false }); // stop scroll/zoom gestures
 
 // ---------- minimap ----------
 const mm = $('minimap'), mctx = mm.getContext('2d');
@@ -570,7 +590,8 @@ function updateCamera(dt) {
     camera.position.set(player.x + Math.sin(a) * r, 4 + deathCam * 1.5, player.z + Math.cos(a) * r);
     camera.lookAt(player.x, 0.8, player.z);
   } else if (camMode === 'fp') {
-    camera.position.set(player.x - fx * 0.6, 1.25, player.z - fz * 0.6);
+    const [hx, hz] = DIRS[player.dir];             // sit at the nose, ahead of the trail
+    camera.position.set(player.x + hx * 0.3, 1.25, player.z + hz * 0.3);
     camera.rotation.set(-0.04, camYaw, camRoll);
   } else {
     camera.position.set(player.x - fx * 11, 6.5, player.z - fz * 11);
@@ -585,10 +606,12 @@ function updateCamera(dt) {
 // set up a demo arena for the title screen
 {
   const r = ARENA * 0.6;
-  player.reset(0, r, 0); bikes[1].reset(0, -r, 2); bikes[2].reset(-r, 0, 1); bikes[3].reset(r, 0, 3);
+  player.reset(5, r, 0); bikes[1].reset(-5, -r, 2); bikes[2].reset(-r, 5, 1); bikes[3].reset(r, -5, 3);
   for (const b of bikes) b.syncTrail();
 }
 
+window.ncReady = true;
+$('startline').textContent = document.body.classList.contains('touch') ? 'Tap anywhere to ride' : 'Press ENTER or tap to ride';
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
